@@ -189,7 +189,7 @@ void ORM::oraInfoCurrentAngle(){
     
   unsigned int angle = j_angle_read[ORA_INDEX]; 
 
-  osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM;
+  osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA;
   osp_output_buffer[OSP_MSG_CMD_INDEX] = OSP_ORM_INFO_ANGLE;
   osp_output_buffer[OSP_BYTE_PARAM_INDEX] = current_address;
   osp_output_buffer[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xFF;
@@ -202,7 +202,7 @@ void ORM::oraInfoCurrentSpeed(){
   ospPrepareOutputBuffer();  
   short int speed = j_speed_current[ORA_INDEX];// j_speed_current[actuatorNo];
 
-  osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM;
+  osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA;
   osp_output_buffer[OSP_MSG_CMD_INDEX] = OSP_ORM_INFO_SPEED;
   osp_output_buffer[OSP_BYTE_PARAM_INDEX] = current_address;
   osp_output_buffer[OSP_ORM_SPEED_LSB_INDEX] = speed & 0xFF;

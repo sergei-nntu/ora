@@ -644,6 +644,15 @@ class OSP:
                                 if self.input_buffer[OSP_MSG_CMD_INDEX] == OSP_ORM_INFO_STATUS:
                                     self.orm_info_status();
                                 if self.input_buffer[OSP_MSG_CMD_INDEX] == OSP_ORM_INFO_IR_STATUS:
+                                    self.orm_info_ir_status();  
+                            if self.input_buffer[OSP_MSG_DEV_INDEX] == OSP_DEV_ORA:
+                                if self.input_buffer[OSP_MSG_CMD_INDEX] ==  OSP_ORM_INFO_ANGLE:
+                                    self.orm_info_angle();
+                                if self.input_buffer[OSP_MSG_CMD_INDEX] == OSP_ORM_INFO_SPEED:
+                                    self.orm_info_speed();
+                                if self.input_buffer[OSP_MSG_CMD_INDEX] == OSP_ORM_INFO_STATUS:
+                                    self.orm_info_status();
+                                if self.input_buffer[OSP_MSG_CMD_INDEX] == OSP_ORM_INFO_IR_STATUS:
                                     self.orm_info_ir_status();       
                             if self.input_buffer[OSP_MSG_DEV_INDEX] == OSP_DEV_OQP:
                                 if self.input_buffer[OSP_MSG_CMD_INDEX] ==  OSP_OQP_INFO_RANGE:
