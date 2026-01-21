@@ -160,7 +160,10 @@ void ORM::ospHandleORACommand(){
     if (cmd == OSP_ORA_CMD_SET_PID_DIFFERENTIAL){
       cmdSetPidDifferential();
     }
-  } 
+  } else {
+    // Re-transmit command if not addressed to this device
+    Serial.write(osp_input_buffer, OSP_COMMAND_LENGTH);
+  }
 }
 
 void ORM::ospHandleCommand(){
@@ -295,7 +298,7 @@ void ORM::updateActuatorsPosition(){
     speed_millis = current_millis;
 
     // Speed Control Routine
-    for(int i=0;i<1;i++){
+    for(int i=0;i<ORA_JOINTS_COUNT;i++){
       // Recalculate the read speed
       if(j_angle_read_prev[i] == 0) {
         // Assuming the previous angle value was not initialised
@@ -305,8 +308,6 @@ void ORM::updateActuatorsPosition(){
       j_angle_read_prev[i] = j_angle_read[i];
 
       j_speed_read[i] = speed_angle_diff;
-
-      j_angle_read[3] = j_speed_read[i];
 
       if (motor_power == 0){
         // If no motor power - just apply the same angle that is currenrly read 
@@ -338,11 +339,8 @@ void ORM::updateActuatorsPosition(){
       PID_A_ZERO.Compute();
 
       int a_zero_effort = (int)output_a_zero;
-      
-      j_angle_read[2] = j_angle_desired[0];
 
       a_zero_effort = int(sgn(a_zero_effort)*((float)MIN_PWM + (float)abs(a_zero_effort)*((float)MAX_PWM - (float)MIN_PWM)/(float)MAX_PWM));
-      j_angle_read[1] = a_zero_effort;
 
       abs_angle_diff-=300;
       if(abs_angle_diff<0){
@@ -363,10 +361,8 @@ void ORM::updateActuatorsPosition(){
       input_a_zero_speed = j_speed_read[i];
       setpoint_a_zero_speed = j_speed_current[i];
       PID_A_ZERO_SPEED.Compute();
-      j_angle_read[4] = output_a_zero_speed;
 
       int a_zero_speed_effort = output_a_zero_speed;
-      
       a_zero_speed_effort = sgn(a_zero_speed_effort)*(MIN_PWM + abs(a_zero_speed_effort)*(MAX_PWM - MIN_PWM)/MAX_PWM);
 
  //}
