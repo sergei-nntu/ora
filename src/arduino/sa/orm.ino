@@ -47,9 +47,8 @@ const char osp_command_template[] = {0xFF, 0xAA, 0x00, 0x00, 0x00, 0x00, 0x00, 0
 const short orm_j_angle_min = 0;
 const short orm_j_angle_max = 1023;
 */
-const int ORM_J_SERVO_PINS[JOINTS_COUNT] = {2,3,4,5,6,7};
 
-const int ORM_J_ADC_PINS[JOINTS_COUNT] = {A0,A1,A2,A3,A4,A5};
+const int ORM_J_ADC_PINS[ORA_JOINTS_COUNT] = {A0};
 
 const int EEPROM_ANGLE_WIDTH_OFFSET = 32;
 
@@ -64,128 +63,27 @@ const int PID_MODE_ANGLE = 2;
 
 int PID_MODE = PID_MODE_SPEED;
 
-//AccelStepper j0(1,X_STEP_PIN,X_DIR_PIN);
-
 void ORM::ospHandleGenericCommand(){
   // TODO
 }
 
-void ORM::cmdSetSpeed(){
-  int actuator_no = osp_input_buffer[OSP_BYTE_PARAM_INDEX];
-  int speed = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
-
-  if (actuator_no >=0 && actuator_no<JOINTS_COUNT){
-    if(speed>0) { // Sanity Check
-      j_speed_desired[actuator_no] = speed;
-      // Setting the speed to joint in steps per second
-      joints[actuator_no]->setMaxSpeed((long)j_speed_desired[actuator_no] * (long)orm_j_stepper_full_rot[actuator_no] / (long)orm_max_int_angle);
-    }
-  }
-}
-
-/*
 void ORM::cmdSetAngle(){
-  int actuator_no = osp_input_buffer[OSP_BYTE_PARAM_INDEX];
-  int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
-
-  if (actuator_no >=0 && actuator_no<JOINTS_COUNT){
-    if(angle<orm_j_angle_min) {
-      angle = orm_j_angle_min;
-    }  
-    if(angle > orm_j_angle_max) {
-      angle = orm_j_angle_max;
-    }
-    j_angle_desired[actuator_no] = angle;
-    j_goal_achieved[actuator_no] = 0;    
-  }
-
-}
-*/
-
-void ORM::cmdSetAngle(){
-  int actuator_no = osp_input_buffer[OSP_BYTE_PARAM_INDEX];
   int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   char force = osp_input_buffer[OSP_ORM_ANGLE_FORCE_INDEX];
-
-  if (actuator_no >=0 && actuator_no<JOINTS_COUNT){
-    j_angle_desired[actuator_no] = angle;
-    j_angle_force[actuator_no] = force;
-  }
-
-  if (actuator_no == GRIPPER_JOINT_NO) {
-    gripper_angle = angle;
-  }
+  j_angle_desired[ORA_INDEX] = angle;
+  j_angle_force[ORA_INDEX] = force;
 }
 
 void ORM::cmdSetCorrAngle(){
-  int actuator_no = osp_input_buffer[OSP_BYTE_PARAM_INDEX];
   int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  j_angle_correction[ORA_INDEX] = angle;
 
-  if (actuator_no >=0 && actuator_no<JOINTS_COUNT){
-    j_angle_correction[actuator_no] = angle;
-    EEPROM.put(actuator_no*sizeof(short), (short) angle);
-    // LEGACY CODE BENEATH. Callibration was needed for stepper motors, not for servo at the moment. 
-    //j_callibr_left[actuator_no] = 2; // Force the callibration after the angle correction set.
-    
-  }
 }
 
 void ORM::cmdSetAngleWidth(){
   int actuator_no = osp_input_buffer[OSP_BYTE_PARAM_INDEX];
   int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
-
-  if (actuator_no >=0 && actuator_no<JOINTS_COUNT){
-    j_angle_width[actuator_no] = angle;
-    EEPROM.put(EEPROM_ANGLE_WIDTH_OFFSET+actuator_no*sizeof(short), (short) angle);
-    //j_callibr_left[actuator_no] = 2; // Force the callibration after the angle correction set.
-    
-  }
-}
-
-void ORM::calibrateJoint(int jointNo){
-  /*// Calibrating Zero Angle
-  joint_servos[jointNo]->write(0);
-  delay(3000);
-
-  for (int i=0;i<ADC_SAMPLES_N;i++){
-    updateSensorsMeasurements();
-    delay(100);
-  }
-  servo_zero_angle[jointNo] = j_angle_filtered[jointNo];
-  // Calibrating Max Angle
-  joint_servos[jointNo]->write(180);
-  delay(3000);
-  for (int i=0;i<ADC_SAMPLES_N;i++){
-    updateSensorsMeasurements();
-    delay(100);
-  }
-  servo_max_angle[jointNo] = j_angle_filtered[jointNo];
-
-  // Save the calibration results in EEPROM
-  EEPROM.put(EEPROM_SERVO_ZERO_ANGLE_ADC+jointNo*sizeof(short), (unsigned short) servo_zero_angle[jointNo]);
-  EEPROM.put(EEPROM_SERVO_MAX_ANGLE_ADC+jointNo*sizeof(short), (unsigned short) servo_max_angle[jointNo]);
-  */
-}
-
-void ORM::cmdCalibrateJoint(){
-  int actuator_no = osp_input_buffer[OSP_BYTE_PARAM_INDEX];
-
-  if (actuator_no >=0 && actuator_no<JOINTS_COUNT){
-    calibrateJoint(actuator_no);
-  }
-}
-
-
-void ORM::cmdSetMotorPower(){
-  char motor_power_param = osp_input_buffer[OSP_BYTE_PARAM_INDEX];
-  motor_power = motor_power_param;
-  if (motor_power!=0){
-    pinMode(MOTOR_POWER_PIN, OUTPUT);
-    digitalWrite(MOTOR_POWER_PIN,LOW);
-  } else {
-    pinMode(MOTOR_POWER_PIN, OUTPUT);
-    digitalWrite(MOTOR_POWER_PIN,HIGH);
-  }
+  j_angle_width[ORA_INDEX] = angle;
 }
 
 void ORM::cmdSetPidProportional(){
@@ -238,36 +136,31 @@ void ORM::_updateMotorDCTunings() {
   PID_A_ZERO_SPEED.SetTunings(Kp, Ki, Kd);
 }
 
-void ORM::ospHandleORMCommand(){
-  // 
-  int cmd = osp_input_buffer[OSP_MSG_CMD_INDEX];  
-  if (cmd == OSP_ORM_CMD_SET_ANGLE) {
-    cmdSetAngle();
-  }
-  if (cmd == OSP_ORM_CMD_SET_SPEED) {
-    cmdSetSpeed();
-  }
-  if (cmd == OSP_ORM_CMD_SET_CORR_ANGLE) {
-    cmdSetCorrAngle();
-  }
-  if (cmd == OSP_ORM_CMD_SET_ANGLE_WIDTH) {
-    cmdSetAngleWidth();
-  }
-  if (cmd == OSP_ORM_CMD_SET_MOTOR_POWER){
-    cmdSetMotorPower();
-  }
-  if (cmd == OSP_ORM_CMD_CALIBRATE_JOINT) {
-    cmdCalibrateJoint();
-  }
-  if (cmd == OSP_ORM_CMD_SET_PID_PROPORTIONAL){
-    cmdSetPidProportional();
-  }
-  if (cmd == OSP_ORM_CMD_SET_PID_INTEGRAL){
-    cmdSetPidIntegral();
-  }
-  if (cmd == OSP_ORM_CMD_SET_PID_DIFFERENTIAL){
-    cmdSetPidDifferential();
-  }
+void ORM::ospHandleORACommand(){
+  int address = osp_input_buffer[OSP_ORA_ADDRESS_INDEX];
+
+  if (address == current_address){
+    int cmd = osp_input_buffer[OSP_MSG_CMD_INDEX];  
+
+    if (cmd == OSP_ORA_CMD_SET_ANGLE) {
+      cmdSetAngle();
+    }
+    if (cmd == OSP_ORA_CMD_SET_CORR_ANGLE) {
+      cmdSetCorrAngle();
+    }
+    if (cmd == OSP_ORA_CMD_SET_ANGLE_WIDTH) {
+      cmdSetAngleWidth();
+    }
+    if (cmd == OSP_ORA_CMD_SET_PID_PROPORTIONAL){
+      cmdSetPidProportional();
+    }
+    if (cmd == OSP_ORA_CMD_SET_PID_INTEGRAL){
+      cmdSetPidIntegral();
+    }
+    if (cmd == OSP_ORA_CMD_SET_PID_DIFFERENTIAL){
+      cmdSetPidDifferential();
+    }
+  } 
 }
 
 void ORM::ospHandleCommand(){
@@ -276,13 +169,9 @@ void ORM::ospHandleCommand(){
   if (dev == OSP_DEV_GENERIC) {
     ospHandleGenericCommand();
   } else if (dev == OSP_DEV_CURRENT) {
-    if (dev == OSP_DEV_ORM) {
-      ospHandleORMCommand();
+    if (dev == OSP_DEV_ORA) {
+      ospHandleORACommand();
     }
-  } else {
-    // ERROR CONDITION. THE CLIENT MUST NOT SEND THE COMMAND WHICH ARE NOT FOR EITHER GENERIC OR CURRENT DEV TYPE
-    // DOING NOTHING FOR NOW
-    ospHandleORMCommand();
   }
 }
 
@@ -292,80 +181,30 @@ void ORM::ospPrepareOutputBuffer(){
   }
 }
 
-void ORM::ormInfoCurrentAngle(int actuatorNo){
+void ORM::oraInfoCurrentAngle(){
   ospPrepareOutputBuffer();
     
-  unsigned int angle = j_angle_read[actuatorNo]; 
+  unsigned int angle = j_angle_read[ORA_INDEX]; 
 
   osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM;
   osp_output_buffer[OSP_MSG_CMD_INDEX] = OSP_ORM_INFO_ANGLE;
-  osp_output_buffer[OSP_BYTE_PARAM_INDEX] = actuatorNo;
+  osp_output_buffer[OSP_BYTE_PARAM_INDEX] = current_address;
   osp_output_buffer[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xFF;
   osp_output_buffer[OSP_ORM_ANGLE_MSB_INDEX] = angle >> 8;
   
   Serial.write(osp_output_buffer, OSP_COMMAND_LENGTH);
 }
 
-void ORM::ormInfoGripperAngle(){
-  ospPrepareOutputBuffer();
-  
-  unsigned short actuatorNo = GRIPPER_JOINT_NO;
-  unsigned int angle = gripper_angle;
-
-  osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM;
-  osp_output_buffer[OSP_MSG_CMD_INDEX] = OSP_ORM_INFO_ANGLE;
-  osp_output_buffer[OSP_BYTE_PARAM_INDEX] = actuatorNo;
-  osp_output_buffer[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xFF;
-  osp_output_buffer[OSP_ORM_ANGLE_MSB_INDEX] = angle >> 8;
-  
-  Serial.write(osp_output_buffer, OSP_COMMAND_LENGTH);
-}
-
-void ORM::ormInfoCurrentSpeed(int actuatorNo){
+void ORM::oraInfoCurrentSpeed(){
   ospPrepareOutputBuffer();  
-  short int speed = j_speed_current[actuatorNo];// j_speed_current[actuatorNo];
+  short int speed = j_speed_current[ORA_INDEX];// j_speed_current[actuatorNo];
 
   osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM;
   osp_output_buffer[OSP_MSG_CMD_INDEX] = OSP_ORM_INFO_SPEED;
-  osp_output_buffer[OSP_BYTE_PARAM_INDEX] = actuatorNo;
+  osp_output_buffer[OSP_BYTE_PARAM_INDEX] = current_address;
   osp_output_buffer[OSP_ORM_SPEED_LSB_INDEX] = speed & 0xFF;
   osp_output_buffer[OSP_ORM_SPEED_MSB_INDEX] = speed >> 8;
   
-  Serial.write(osp_output_buffer, OSP_COMMAND_LENGTH);
-}
-
-void ORM::ormInfoIRStatus(){
-  ospPrepareOutputBuffer(); 
-
-  osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM;
-  osp_output_buffer[OSP_MSG_CMD_INDEX] = OSP_ORM_INFO_IR_STATUS;
-  osp_output_buffer[OSP_BYTE_PARAM_INDEX] = 0;
-  osp_output_buffer[OSP_BYTE_PARAM_INDEX+1] = 0;
-  osp_output_buffer[OSP_BYTE_PARAM_INDEX+2] = 0;
-  osp_output_buffer[OSP_BYTE_PARAM_INDEX+3] = 0;
-  
-  Serial.write(osp_output_buffer, OSP_COMMAND_LENGTH);
-}
-
-void ORM::ormInfoJointStatus(int actuatorNo) {
-  short int status_word = 0;
-  // Forming the status byte
-  int powered = 1; // STUB VALUE. TO BE READ IN LATER RELEASES
-  int error = 0; // STUB VALUE. TO BE READ IN LATER RELEASES
-
-  status_word = status_word | (joints[actuatorNo]->isRunning() << OSP_ORM_JOINT_STATUS_RUNNING_BIT_INDEX);
-  status_word = status_word | (powered << OSP_ORM_JOINT_STATUS_POWERED_BIT_INDEX);
-  status_word = status_word | (error << OSP_ORM_JOINT_STATUS_ERROR_BIT_INDEX);
-
-  // Forming the output buffer
-  ospPrepareOutputBuffer(); 
-
-  osp_output_buffer[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM;
-  osp_output_buffer[OSP_MSG_CMD_INDEX] = OSP_ORM_INFO_JOINT_STATE;
-  osp_output_buffer[OSP_BYTE_PARAM_INDEX] = actuatorNo;
-  osp_output_buffer[OSP_ORM_STATUS_LSB_INDEX] = status_word & 0xFF;
-  osp_output_buffer[OSP_ORM_STATUS_MSB_INDEX] = status_word >> 8;
-
   Serial.write(osp_output_buffer, OSP_COMMAND_LENGTH);
 }
 
@@ -373,15 +212,8 @@ void ORM::sendUpdateInfo(){
   unsigned long current_millis = millis();
   if (current_millis - last_millis > UPDATE_INTERVAL){
     // Stepper Joints Update
-    for (int i=0;i<JOINTS_COUNT;i++){
-      ormInfoCurrentAngle(i);
-      ormInfoCurrentSpeed(i);
-      ormInfoJointStatus(i);
-      
-    }
-    ormInfoIRStatus();
-    // Gripper Angle Update
-    ormInfoGripperAngle();
+    oraInfoCurrentAngle();
+    oraInfoCurrentSpeed();
     last_millis = current_millis;
   }
 }
@@ -585,50 +417,11 @@ void ORM::updateActuatorsPosition(){
      
     }
   }
-
-  // Update ORA-based joints
-  for (int i=0;i<JOINTS_COUNT;i++){
-    /*
-    j_angle_read[i] = readAngle(i);
-
-    if(!joints[i]->isRunning()){
-      if(abs(j_angle_current[i] - j_angle_desired[i])>0) {
-        long int steps_to_make = (long)(j_angle_desired[i] - j_angle_current[i]) * (long)orm_j_stepper_full_rot[i] / orm_max_int_angle;
-        joints[i]->move(steps_to_make);
-        j_angle_current[i] = j_angle_desired[i];
-      } else {
-        // Only apply the correction if enough data is accumulated
-        if(read_samples_size[i] == STAT_SAMPLE_SIZE) {
-          if(fabs(j_angle_read[i]-j_angle_current[i])>200) {
-            j_callibr_left[i] = 2; 
-          }
-          if(j_callibr_left[i] >0 && read_samples_size[i] == STAT_SAMPLE_SIZE){
-            // If encoder value differs too much - from the expected value - make the correction
-            long int steps_to_make = ((long)(j_angle_current[i] - j_angle_read[i]) * (long)orm_j_stepper_full_rot[i] / orm_max_int_angle);
-            joints[i]->move(steps_to_make);
-            j_callibr_left[i] --;
-          }
-        }
-      }
-    }
-    */
-    float servo_angle = ((float)(j_angle_current[i]+j_angle_correction[i])*(float)orm_180_angle_width / (float)j_angle_width[i])*(float)360/(float)orm_max_int_angle;
-    //joint_servos[i]->write(servo_angle);
-
-  }
-
- 
-
-  // Update for PID-controlled joints with speed-based approach 
-
-  // Update Gripper Position
-  int servo_angle = (long)gripper_angle * (long)360 / (long)orm_max_int_angle;
-  //gripper_servo->write(servo_angle);
 }
 
 
 void ORM::updateSensorsMeasurements(){
-  for (int i=0;i<JOINTS_COUNT;i++){
+  for (int i=0;i<ORA_JOINTS_COUNT;i++){
     int adc_read = analogRead(ORM_J_ADC_PINS[i]);
     int angle_int = orm_max_int_angle * adc_read  / ADC_MAX;
     j_angle_read_samples[i][j_angle_samples_ptr] = angle_int;
@@ -638,7 +431,7 @@ void ORM::updateSensorsMeasurements(){
   if(j_angle_samples_count<ADC_SAMPLES_N){
     j_angle_samples_count++;
   }
-  for(int i=0;i<1;i++){
+  for(int i=0;i<ORA_JOINTS_COUNT;i++){
     long int sum = 0;
     for (int j=0;j<j_angle_samples_count;j++){
       sum += j_angle_read_samples[i][j];
@@ -693,6 +486,19 @@ void ORM::setup(){
 
   // Initing the current address
   current_address = 0;
+
+  // Enable pull-up resistors for address pins
+  pinMode(2, INPUT_PULLUP);
+  pinMode(3, INPUT_PULLUP);
+  pinMode(4, INPUT_PULLUP);
+  pinMode(5, INPUT_PULLUP);
+
+  int addr_0 = !digitalRead(2);
+  int addr_1 = !digitalRead(3);
+  int addr_2 = !digitalRead(4);
+  int addr_3 = !digitalRead(5);
+  
+  current_address = addr_3 << 3 | addr_2 << 2 | addr_1 << 1 | addr_0;
 
   last_millis = millis();
   speed_millis = millis();
@@ -752,7 +558,7 @@ void ORM::setup(){
     joint_servos[i]->write(0);    
   }
 */
-  for (int i=0;i<JOINTS_COUNT;i++) {
+  for (int i=0;i<ORA_JOINTS_COUNT;i++) {
     /*
    // INIT JOINT
    joints[i]->setEnablePin(ORM_J_ENABLE_PIN[i]);

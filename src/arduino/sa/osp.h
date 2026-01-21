@@ -4,6 +4,7 @@
 #define OSP_MSG_DEV_INDEX     2
 #define OSP_MSG_CMD_INDEX     3
 #define OSP_BYTE_PARAM_INDEX      4
+#define OSP_ORA_ADDRESS_INDEX     4
 #define OSP_INT_PARAM_MSB_INDEX   5
 #define OSP_INT_PARAM_LSB_INDEX   4
 #define OSP_ORM_ANGLE_MSB_INDEX   6
@@ -24,6 +25,8 @@
 #define OSP_DEV_ORM           1 // Open Robotic Manipulator
 #define OSP_DEV_OBP           2 // Open Battery Pack 
 #define OSP_DEV_O2D           3 // Open Differential Drive
+#define OSP_DEV_OQP           4 // Open Quadruped Platform
+#define OSP_DEV_ORA           5 // Open Robotic Actuator
 
 #define OSP_CMD_REQ_DEV_TYPE  1
 
@@ -55,11 +58,20 @@
 #define OSP_ORM_INFO_IR_STATUS    0x15
 
 
+#define OSP_ORA_CMD_SET_ANGLE               0x02
+#define OSP_ORA_CMD_SET_SPEED               0x03
+#define OSP_ORA_CMD_SET_CORR_ANGLE          0x05
+#define OSP_ORA_CMD_SET_ANGLE_WIDTH         0x06
+#define OSP_ORA_CMD_SET_MOTOR_POWER         0x0D
+#define OSP_ORA_CMD_SET_PID_PROPORTIONAL    0x07
+#define OSP_ORA_CMD_SET_PID_INTEGRAL        0x08
+#define OSP_ORA_CMD_SET_PID_DIFFERENTIAL    0x09
+
 #define OSP_ORM_JOINT_STATUS_RUNNING_BIT_INDEX  0
 #define OSP_ORM_JOINT_STATUS_POWERED_BIT_INDEX  1
 #define OSP_ORM_JOINT_STATUS_ERROR_BIT_INDEX    2
 
-#define OSP_DEV_CURRENT           OSP_DEV_ORM
+#define OSP_DEV_CURRENT           OSP_DEV_ORA
 
 #define OSP_COMMAND_LENGTH        9
 #define OSP_BUFFER_SIZE           10

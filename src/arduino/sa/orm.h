@@ -1,13 +1,10 @@
 #ifndef ORM_H
 #define ORM_H
-#include <AccelStepper.h>
-//#include <Servo.h> 
 
 #include "osp.h"
-//#include "pins_RAMPS.h"
 
-#define JOINTS_COUNT              6
-#define GRIPPER_JOINT_NO          JOINTS_COUNT
+#define ORA_INDEX   0
+#define ORA_JOINTS_COUNT 1
 
 #define STAT_SAMPLE_SIZE          20
 
@@ -46,14 +43,14 @@ const long orm_max_int_angle = 32768;      // Max Positive Value of Integer Angl
 
 const long orm_180_angle_width = orm_max_int_angle/2;
 
-const short orm_j_stepper_full_rot[JOINTS_COUNT] = {16000, 16000 ,16000, 9780, 9780, 9780};  // Number of steps to reach 2*Pi Angle
+const short orm_j_stepper_full_rot[ORA_JOINTS_COUNT] = {16000};  // Number of steps to reach 2*Pi Angle
 
-const short orm_j_speed_max[JOINTS_COUNT] =     {3000, 4000, 4000, 4000, 4000, 4000};
-const short orm_j_speed_min[JOINTS_COUNT] =     {400, 400, 400, 400, 400, 400};
-const short orm_j_acceleration[JOINTS_COUNT] =  {500, 1000, 4000, 1000, 1000, 1000};
+const short orm_j_speed_max[ORA_JOINTS_COUNT] =     {3000};
+const short orm_j_speed_min[ORA_JOINTS_COUNT] =     {400};
+const short orm_j_acceleration[ORA_JOINTS_COUNT] =  {500};
 
-const  int default_servo_zero_angle[JOINTS_COUNT] = {2700, 2700, 2700, 2700, 2700, 2700};
-const  int default_servo_max_angle[JOINTS_COUNT] = {28500,28500,28500,28500,28500,28500};
+const  int default_servo_zero_angle[ORA_JOINTS_COUNT] = {2700};
+const  int default_servo_max_angle[ORA_JOINTS_COUNT] = {28500};
 
 class ORM {
   private:
@@ -61,38 +58,33 @@ class ORM {
     char            osp_output_buffer[OSP_BUFFER_SIZE];
     unsigned char   osp_input_buffer[OSP_BUFFER_SIZE];
     int             osp_ptr=0;
-
-    // SERVO CONTROL VARIABLES
-    //Servo * joint_servos[JOINTS_COUNT];
-
-    // STEPPER CONTROL VARIABLES
-    AccelStepper*   joints[JOINTS_COUNT];
+    short           current_address;
 
     unsigned long speed_millis = 0;
 
     double Ki, Kp, Kd; // Pid Coefs
 
-    short j_speed_desired[JOINTS_COUNT] =   {500, 500, 500, 500, 500, 500}; // Default Speed 11.25 degrees second. Must be populated in the constructor
-    short j_speed_current[JOINTS_COUNT] =   {0, 0, 0, 0, 0, 0};
-    short j_speed_read[JOINTS_COUNT] =      {0, 0, 0, 0, 0, 0};
-    short j_angle_desired[JOINTS_COUNT] =   {0, 0, 0, 0, 0, 0};
-    short j_angle_current[JOINTS_COUNT] =   {0, 0, 0, 0, 0, 0};
-    short j_angle_read[JOINTS_COUNT] =      {0, 0, 0, 0, 0, 0};
-    short j_angle_read_prev[JOINTS_COUNT] = {0, 0, 0, 0, 0, 0};
-    short j_angle_correction[JOINTS_COUNT] ={0, 0, 0, 0, 0, 0};
-    short j_angle_width[JOINTS_COUNT] =     {0, 0, 0, 0, 0, 0};
-    char  j_angle_force[JOINTS_COUNT] =     {0, 0, 0, 0, 0, 0};
-    short j_callibr_left[JOINTS_COUNT] = {2, 2, 2, 2, 2, 2};
-    short js_angle_scale_factor[JOINTS_COUNT] = {1024,1024,682,682,1024,682}; // Scale factor to be applied prior to sending the angle to servos
-    short js_small_angle_threshold[JOINTS_COUNT] = {1024, 100, 0, 150, 150, 150}; // If the difference between the desired and the current angle does not exceed this value - do not apply the acceleration.
+    short j_speed_desired[ORA_JOINTS_COUNT] =   {500}; // Default Speed 11.25 degrees second. Must be populated in the constructor
+    short j_speed_current[ORA_JOINTS_COUNT] =   {0};
+    short j_speed_read[ORA_JOINTS_COUNT] =      {0};
+    short j_angle_desired[ORA_JOINTS_COUNT] =   {0};
+    short j_angle_current[ORA_JOINTS_COUNT] =   {0};
+    short j_angle_read[ORA_JOINTS_COUNT] =      {0};
+    short j_angle_read_prev[ORA_JOINTS_COUNT] = {0};
+    short j_angle_correction[ORA_JOINTS_COUNT] ={0};
+    short j_angle_width[ORA_JOINTS_COUNT] =     {0};
+    char  j_angle_force[ORA_JOINTS_COUNT] =     {0};
+    short j_callibr_left[ORA_JOINTS_COUNT] = {2};
+    short js_angle_scale_factor[ORA_JOINTS_COUNT] = {1024}; // Scale factor to be applied prior to sending the angle to servos
+    short js_small_angle_threshold[ORA_JOINTS_COUNT] = {1024}; // If the difference between the desired and the current angle does not exceed this value - do not apply the acceleration.
 
-    short servo_zero_angle[JOINTS_COUNT];
-    short servo_max_angle[JOINTS_COUNT];
+    short servo_zero_angle[ORA_JOINTS_COUNT];
+    short servo_max_angle[ORA_JOINTS_COUNT];
 
-    short j_angle_read_samples[JOINTS_COUNT][ADC_SAMPLES_N];
+    short j_angle_read_samples[ORA_JOINTS_COUNT][ADC_SAMPLES_N];
     short j_angle_samples_ptr = 0;
     short j_angle_samples_count = 0;
-    short j_angle_filtered[JOINTS_COUNT];
+    short j_angle_filtered[ORA_JOINTS_COUNT];
 
 
     char motor_power = 1;
@@ -103,11 +95,10 @@ class ORM {
 
     // STATISTICAL FILTERING 
 
-    short j_angle_sample[JOINTS_COUNT * STAT_SAMPLE_SIZE];
-    short current_address;
+    short j_angle_sample[ORA_JOINTS_COUNT * STAT_SAMPLE_SIZE];
 
-    int read_samples_size[JOINTS_COUNT] = {0,0,0,0,0,0};
-    int read_samples_ptr[JOINTS_COUNT] = {0,0,0,0,0,0};
+    int read_samples_size[ORA_JOINTS_COUNT] = {0};
+    int read_samples_ptr[ORA_JOINTS_COUNT] = {0};
     /*
     short j_speed_current[JOINTS_COUNT] = {0,};
     short j_goal_achieved[JOINTS_COUNT] = {16,};  
@@ -120,11 +111,10 @@ class ORM {
     void            updateSensorsMeasurements();
 
     // Incoming Command Processing Functions
-    void ospHandleORMCommand();
+    void ospHandleORACommand();
     void ospHandleGenericCommand();
 
     void cmdSetAngle();
-    void cmdSetSpeed();
     void cmdMakeSteps();
     void cmdSetCorrAngle();
     void cmdSetAngleWidth();
@@ -139,11 +129,8 @@ class ORM {
 
     // Outcoming Commands Generation Functinos
     void ospPrepareOutputBuffer();
-    void ormInfoCurrentAngle(int actuatorNo);
-    void ormInfoCurrentSpeed(int actuatorNo);
-    void ormInfoJointStatus(int actuatorNo);
-    void ormInfoGripperAngle();
-    void ormInfoIRStatus();
+    void oraInfoCurrentAngle();
+    void oraInfoCurrentSpeed();
     // Data Input Function
     short readAngle(int actuatorNo);
 

@@ -12,6 +12,8 @@ import json
 
 OSP_MSG_DEV_INDEX = 2
 OSP_MSG_CMD_INDEX = 3
+OSP_MSG_ADDRESS_INDEX = 4
+OSP_ORA_ADDRESS_INDEX = 4
 OSP_BYTE_PARAM_INDEX = 4
 OSP_INT_PARAM_MSB_INDEX = 5
 OSP_INT_PARAM_LSB_INDEX = 4
@@ -29,6 +31,7 @@ OSP_DEV_ORM = 1
 OSP_DEV_OBP = 2
 OSP_DEV_O2D = 3
 OSP_DEV_OQP = 4
+OSP_DEV_ORA = 5
 
 # OSP COMMANDS 
 
@@ -87,6 +90,10 @@ OSP_OQP_CMD_INFO_CORR_ANGLE  = 0x35
 OSP_OQP_CMD_INFO_ANGLE_WIDTH  = 0x36
 OSP_OQP_CMD_INFO_DEFAULT_ANGLE  = 0x37
 
+OSP_ORA_CMD_SET_ANGLE = 0x02
+OSP_ORA_CMD_SET_PID_PROPORTIONAL = 0x07
+OSP_ORA_CMD_SET_PID_INTEGRAL = 0x08
+OSP_ORA_CMD_SET_PID_DIFFERENTIAL = 0x09
 
 OSP_OQP_DURATION_MSB_INDEX = 5
 OSP_OQP_DURATION_LSB_INDEX = 4
@@ -230,6 +237,17 @@ class OSP:
             cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xff
             cmd_bytes[OSP_ORM_ANGLE_FORCE_INDEX] = force
             self.osp_send_command(cmd_bytes)
+
+    def ora_set_angle(self, address, angle, force = 0):
+        #print("Sending Set Angle Command: "+str(joint)+" -> "+str(angle))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_ANGLE
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (angle >> 8) &0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_FORCE_INDEX] = force
+        self.osp_send_command(cmd_bytes)
         
     def set_speed(self, joint, speed):
         cmd_bytes = self.command_buffer_pattern.copy()
