@@ -6,7 +6,6 @@
 ORM orm;
 
 void setup() {
-  digitalWrite(10,1);
   orm.setup();
 }
 

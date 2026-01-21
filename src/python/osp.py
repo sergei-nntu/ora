@@ -14,7 +14,13 @@ OSP_MSG_DEV_INDEX = 2
 OSP_MSG_CMD_INDEX = 3
 OSP_BYTE_PARAM_INDEX = 4
 OSP_INT_PARAM_MSB_INDEX = 5
-OSP_INT_PARAM_LSB_INDEX = 4 
+OSP_INT_PARAM_LSB_INDEX = 4
+OSP_ORM_MSB_PROPORTIONAL_PARAM = 5
+OSP_ORM_LSB_PROPORTIONAL_PARAM = 4
+OSP_ORM_MSB_INTEGRAL_PARAM = 5
+OSP_ORM_LSB_INTEGRAL_PARAM = 4
+OSP_ORM_MSB_DIFFERENTIAL_PARAM = 5
+OSP_ORM_LSB_DIFFERENTIAL_PARAM = 4 
 
 # OSP DEVICE TYPES
 
@@ -51,6 +57,9 @@ OSP_ORM_CMD_SET_ANGLE = 0x02
 OSP_ORM_CMD_SET_SPEED = 0x03
 OSP_ORM_CMD_SET_CORR_ANGLE= 0x05
 OSP_ORM_CMD_SET_ANGLE_WIDTH= 0x06
+OSP_ORM_CMD_SET_PID_PROPORTIONAL = 0x07
+OSP_ORM_CMD_SET_PID_INTEGRAL = 0x08
+OSP_ORM_CMD_SET_PID_DIFFERENTIAL = 0x09
 OSP_ORM_CMD_SET_MOTOR_POWER = 0x0D
 OSP_ORM_CMD_CALIBRATE_JOINT = 0x0E
 OSP_ORM_INFO_ANGLE = 0x12
@@ -236,6 +245,33 @@ class OSP:
         cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM
         cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORM_CMD_SET_MOTOR_POWER
         cmd_bytes[OSP_BYTE_PARAM_INDEX] = power
+        self.osp_send_command(cmd_bytes)
+    
+    def set_pid_proportional(self, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORM_CMD_SET_PID_PROPORTIONAL
+        value_int = int(value * 10000)
+        cmd_bytes[OSP_ORM_MSB_PROPORTIONAL_PARAM] = (value_int >> 8) & 0xff
+        cmd_bytes[OSP_ORM_LSB_PROPORTIONAL_PARAM] = value_int & 0xff
+        self.osp_send_command(cmd_bytes)
+    
+    def set_pid_integral(self, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORM_CMD_SET_PID_INTEGRAL
+        value_int = int(value * 10000)
+        cmd_bytes[OSP_ORM_MSB_INTEGRAL_PARAM] = (value_int >> 8) & 0xff
+        cmd_bytes[OSP_ORM_LSB_INTEGRAL_PARAM] = value_int & 0xff
+        self.osp_send_command(cmd_bytes)
+    
+    def set_pid_differential(self, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORM
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORM_CMD_SET_PID_DIFFERENTIAL
+        value_int = int(value * 10000)
+        cmd_bytes[OSP_ORM_MSB_DIFFERENTIAL_PARAM] = (value_int >> 8) & 0xff
+        cmd_bytes[OSP_ORM_LSB_DIFFERENTIAL_PARAM] = value_int & 0xff
         self.osp_send_command(cmd_bytes)
         
         
