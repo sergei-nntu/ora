@@ -21,7 +21,7 @@ Servo js5;  // Joint Servo 5
 */
 
 
-#define MIN_PWM 120 // Good 110
+#define MIN_PWM 140 // Good 110, last 78
 #define MAX_PWM 255
 
 double input_a_zero = 0;  // Current Position of Actuator 0
@@ -32,8 +32,21 @@ double input_a_zero_speed = 0;  // Current Position of Actuator 0
 double output_a_zero_speed = 0; // Desired Effort to Apply -255 .. 255
 double setpoint_a_zero_speed =0; // Desired Position of Actuator 0
 
+double input_a_zero_accel = 0;  // Current Position of Actuator 0
+double output_a_zero_accel = 0; // Desired Effort to Apply -255 .. 255
+double setpoint_a_zero_accel=0; // Desired Position of Actuator 05
+
 PID PID_A_ZERO(&input_a_zero, &output_a_zero, &setpoint_a_zero, 0.05,  0.0045, 0.0045, DIRECT);
-PID PID_A_ZERO_SPEED(&input_a_zero_speed, &output_a_zero_speed, &setpoint_a_zero_speed, 0.200,  0.025, 0.005/*0.01*/, DIRECT);
+
+// 0.1, 0.50 , 0.001
+// 0.10,  0.85, 0.0015 - good for 0.5 kg load
+
+PID PID_A_ZERO_SPEED(&input_a_zero_speed, &output_a_zero_speed, &setpoint_a_zero_speed, 0.10,  0.85, 0.0015/*0.01*/, DIRECT);
+PID PID_A_ZERO_ACCEL(&input_a_zero_accel, &output_a_zero_accel, &setpoint_a_zero_accel, 0.055,  0.0040, 0.00025/*0.01*/, DIRECT);
+
+const double DEFAULT_PID_KP = 0.05;
+const double DEFAULT_PID_KI = 0.0045;
+const double DEFAULT_PID_KD = 0.0045;
 
 //Servo gripperServo;
 
@@ -50,18 +63,25 @@ const short orm_j_angle_max = 1023;
 
 const int ORM_J_ADC_PINS[ORA_JOINTS_COUNT] = {A0};
 
-const int EEPROM_ANGLE_WIDTH_OFFSET = 32;
-
-const int EEPROM_DEFAULT_ANGLE_OFFSET = 64;
-
-const int EEPROM_SERVO_ZERO_ANGLE_ADC = 96;
-
-const int EEPROM_SERVO_MAX_ANGLE_ADC = 128;
+const int EEPROM_ANGLE_CORRECTION_OFFSET = 0;
+const int EEPROM_ANGLE_WIDTH_OFFSET = EEPROM_ANGLE_CORRECTION_OFFSET + ORA_JOINTS_COUNT * sizeof(short);
+const int EEPROM_DEFAULT_ANGLE_OFFSET = EEPROM_ANGLE_WIDTH_OFFSET + ORA_JOINTS_COUNT * sizeof(short);
+const int EEPROM_SERVO_ZERO_ANGLE_ADC = EEPROM_DEFAULT_ANGLE_OFFSET + ORA_JOINTS_COUNT * sizeof(short);
+const int EEPROM_SERVO_MAX_ANGLE_ADC = EEPROM_SERVO_ZERO_ANGLE_ADC + ORA_JOINTS_COUNT * sizeof(short);
+const unsigned short PID_EEPROM_MAGIC = 0xA5A5;
+const int EEPROM_PID_MAGIC_OFFSET = EEPROM_SERVO_MAX_ANGLE_ADC + ORA_JOINTS_COUNT * sizeof(short);
+const int EEPROM_PID_KP_OFFSET = EEPROM_PID_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_PID_KI_OFFSET = EEPROM_PID_KP_OFFSET + sizeof(double);
+const int EEPROM_PID_KD_OFFSET = EEPROM_PID_KI_OFFSET + sizeof(double);
+const unsigned short CALIB_EEPROM_MAGIC = 0xC3C3;
+const int EEPROM_CALIB_MAGIC_OFFSET = EEPROM_PID_KD_OFFSET + sizeof(double);
 
 const int PID_MODE_SPEED = 1;
 const int PID_MODE_ANGLE = 2;
 
 int PID_MODE = PID_MODE_SPEED;
+const int CONTROL_MODE_PID = 0;
+const int CONTROL_MODE_FORCE_PWM = 1;
 
 void ORM::ospHandleGenericCommand(){
   // TODO
@@ -72,11 +92,13 @@ void ORM::cmdSetAngle(){
   char force = osp_input_buffer[OSP_ORM_ANGLE_FORCE_INDEX];
   j_angle_desired[ORA_INDEX] = angle;
   j_angle_force[ORA_INDEX] = force;
+  control_mode = CONTROL_MODE_PID;
 }
 
 void ORM::cmdSetCorrAngle(){
   int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   j_angle_correction[ORA_INDEX] = angle;
+  saveCalibrationToEeprom(ORA_INDEX);
 
 }
 
@@ -84,22 +106,34 @@ void ORM::cmdSetAngleWidth(){
   int actuator_no = osp_input_buffer[OSP_BYTE_PARAM_INDEX];
   int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   j_angle_width[ORA_INDEX] = angle;
+  saveCalibrationToEeprom(ORA_INDEX);
+}
+
+void ORM::cmdSetForcePwm(){
+  int pwm = (short)(((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX]);
+  if (pwm > 255) {
+    pwm = 255;
+  } else if (pwm < -255) {
+    pwm = -255;
+  }
+  control_pwm = pwm;
+  control_mode = CONTROL_MODE_FORCE_PWM;
 }
 
 void ORM::cmdSetPidProportional(){
-  int newKp = ((int)(osp_input_buffer[OSP_ORM_MSB_PROPORTIONAL_PARAM]) << 8) | osp_input_buffer[OSP_ORM_LSB_PROPORTIONAL_PARAM];
+  int newKp = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   double Kp = (double)newKp / 10000;
   setPidProportional(Kp);
 }
 
 void ORM::cmdSetPidIntegral(){
-  int newKi = ((int)(osp_input_buffer[OSP_ORM_MSB_INTEGRAL_PARAM]) << 8) | osp_input_buffer[OSP_ORM_LSB_INTEGRAL_PARAM];
+  int newKi = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   double Ki = (double)newKi / 10000;
   setPidIntegral(Ki);
 }
 
 void ORM::cmdSetPidDifferential(){
-  int newKd = ((int)(osp_input_buffer[OSP_ORM_MSB_DIFFERENTIAL_PARAM]) << 8) | osp_input_buffer[OSP_ORM_LSB_DIFFERENTIAL_PARAM];
+  int newKd = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   double Kd = (double)newKd / 10000;
   setPidDifferential(Kd);
 }
@@ -107,6 +141,7 @@ void ORM::cmdSetPidDifferential(){
 void ORM::setPidDifferential(double value) {
   Kd = value;
   _updateMotorDCTunings();
+  savePidToEeprom();
 }
 
 double ORM::getPidDifferential() {
@@ -116,6 +151,7 @@ double ORM::getPidDifferential() {
 void ORM::setPidIntegral(double value) {
   Ki = value;
   _updateMotorDCTunings();
+  savePidToEeprom();
 }
 
 double ORM::getPidIntegral() {
@@ -125,6 +161,7 @@ double ORM::getPidIntegral() {
 void ORM::setPidProportional(double value) {
   Kp = value;
   _updateMotorDCTunings();
+  savePidToEeprom();
 }
 
 double ORM::getPidProportional() {
@@ -134,6 +171,34 @@ double ORM::getPidProportional() {
 void ORM::_updateMotorDCTunings() {
   PID_A_ZERO.SetTunings(Kp, Ki, Kd);
   PID_A_ZERO_SPEED.SetTunings(Kp, Ki, Kd);
+}
+
+void ORM::savePidToEeprom() {
+  EEPROM.put(EEPROM_PID_MAGIC_OFFSET, (unsigned short)PID_EEPROM_MAGIC);
+  EEPROM.put(EEPROM_PID_KP_OFFSET, Kp);
+  EEPROM.put(EEPROM_PID_KI_OFFSET, Ki);
+  EEPROM.put(EEPROM_PID_KD_OFFSET, Kd);
+}
+
+void ORM::loadPidFromEeprom() {
+  unsigned short magic = 0;
+  EEPROM.get(EEPROM_PID_MAGIC_OFFSET, magic);
+  if (magic != PID_EEPROM_MAGIC) {
+    return;
+  }
+  EEPROM.get(EEPROM_PID_KP_OFFSET, Kp);
+  EEPROM.get(EEPROM_PID_KI_OFFSET, Ki);
+  EEPROM.get(EEPROM_PID_KD_OFFSET, Kd);
+  _updateMotorDCTunings();
+}
+
+void ORM::saveCalibrationToEeprom(int jointNo) {
+  EEPROM.put(EEPROM_ANGLE_CORRECTION_OFFSET + jointNo * sizeof(short), j_angle_correction[jointNo]);
+  EEPROM.put(EEPROM_ANGLE_WIDTH_OFFSET + jointNo * sizeof(short), j_angle_width[jointNo]);
+  EEPROM.put(EEPROM_DEFAULT_ANGLE_OFFSET + jointNo * sizeof(short), j_angle_desired[jointNo]);
+  EEPROM.put(EEPROM_SERVO_ZERO_ANGLE_ADC + jointNo * sizeof(short), servo_zero_angle[jointNo]);
+  EEPROM.put(EEPROM_SERVO_MAX_ANGLE_ADC + jointNo * sizeof(short), servo_max_angle[jointNo]);
+  EEPROM.put(EEPROM_CALIB_MAGIC_OFFSET, (unsigned short)CALIB_EEPROM_MAGIC);
 }
 
 void ORM::ospHandleORACommand(){
@@ -159,6 +224,9 @@ void ORM::ospHandleORACommand(){
     }
     if (cmd == OSP_ORA_CMD_SET_PID_DIFFERENTIAL){
       cmdSetPidDifferential();
+    }
+    if (cmd == OSP_ORA_CMD_SET_FORCE_PWM){
+      cmdSetForcePwm();
     }
   } else {
     // Re-transmit command if not addressed to this device
@@ -309,6 +377,9 @@ void ORM::updateActuatorsPosition(){
 
       j_speed_read[i] = speed_angle_diff;
 
+      long accel_speed_diff = j_speed_read[i] - j_speed_read_prev[i];
+      j_accel_read[i] = accel_speed_diff;
+
       if (motor_power == 0){
         // If no motor power - just apply the same angle that is currenrly read 
         j_angle_current[i] = j_angle_read[i];
@@ -331,6 +402,17 @@ void ORM::updateActuatorsPosition(){
 
       long abs_angle_diff = angle_diff * direction;
 
+      if (control_mode == CONTROL_MODE_FORCE_PWM) {
+        if (control_pwm > 0) {
+          analogWrite(A_ZERO_FWD_PIN, control_pwm);
+          analogWrite(A_ZERO_BCK_PIN, 0);
+        } else {
+          analogWrite(A_ZERO_FWD_PIN, 0);
+          analogWrite(A_ZERO_BCK_PIN, -control_pwm);
+        }
+        continue;
+      }
+
       // Apply PID controller to control the absolute position
       // Update for PID-controlled joints
       input_a_zero = (double)j_angle_read[0];
@@ -341,16 +423,21 @@ void ORM::updateActuatorsPosition(){
       int a_zero_effort = (int)output_a_zero;
 
       a_zero_effort = int(sgn(a_zero_effort)*((float)MIN_PWM + (float)abs(a_zero_effort)*((float)MAX_PWM - (float)MIN_PWM)/(float)MAX_PWM));
-
+/*
       abs_angle_diff-=300;
       if(abs_angle_diff<0){
         abs_angle_diff = 0;
       }
-
+*/
       long sqrt_angle_diff = isqrt(abs_angle_diff);
+      long accel_sqrt = (long)isqrt(2*orm_j_acceleration[i]);
 
-      float deaccelerate_speed = (long)direction*(long)sqrt_angle_diff * (long)ORM_SPEED_UPDATE_INTERVAL_MS*(long)orm_j_acceleration[i] / (long)ORM_MS_IN_SECOND; 
+      float deaccelerate_speed = (long)direction*(long)sqrt_angle_diff * (long)accel_sqrt * (long)ORM_SPEED_UPDATE_INTERVAL_MS / (long)ORM_MS_IN_SECOND; 
       
+      // correction of deacceleration speed 
+
+      // deaccelerate_speed -= ORM_SPEED_UPDATE_INTERVAL_MS * orm_j_acceleration[i] / ORM_MS_IN_SECOND;
+
       long max_speed = direction * orm_j_speed_max[i];
 
       long result_speed = min(min(direction*max_speed,direction*accelerate_speed),direction*deaccelerate_speed);
@@ -360,12 +447,27 @@ void ORM::updateActuatorsPosition(){
       // Applying PID-controller to contorl the speed
       input_a_zero_speed = j_speed_read[i];
       setpoint_a_zero_speed = j_speed_current[i];
+
+
+      long accel_desired = j_speed_current[i] - j_speed_read[i];
+
+      input_a_zero_accel = j_accel_read[i];
+      setpoint_a_zero_accel = accel_desired;
+
+      PID_A_ZERO_ACCEL.Compute();
+
       PID_A_ZERO_SPEED.Compute();
 
       int a_zero_speed_effort = output_a_zero_speed;
       a_zero_speed_effort = sgn(a_zero_speed_effort)*(MIN_PWM + abs(a_zero_speed_effort)*(MAX_PWM - MIN_PWM)/MAX_PWM);
 
+      int a_zero_accel_effort = output_a_zero_accel;
+      a_zero_accel_effort = sgn(a_zero_accel_effort)*(MIN_PWM + abs(a_zero_accel_effort)*(MAX_PWM - MIN_PWM)/MAX_PWM);
+
+
+
  //}
+ /*
       if(abs_angle_diff<0){
         if (a_zero_effort > 0) {
           analogWrite(A_ZERO_PWM_PIN, a_zero_effort);
@@ -387,7 +489,36 @@ void ORM::updateActuatorsPosition(){
           digitalWrite(A_ZERO_BCK_PIN, 0);
         }
       }
-
+*/
+      // Apply PWM from the Speed PID regulator
+      if (a_zero_speed_effort > 0) {
+        analogWrite(A_ZERO_FWD_PIN, a_zero_speed_effort);
+        analogWrite(A_ZERO_BCK_PIN, 0);
+      } else {
+        analogWrite(A_ZERO_FWD_PIN, 0);
+        analogWrite(A_ZERO_BCK_PIN, -a_zero_speed_effort);
+      }
+      
+      /*
+      //if(j_speed_read[i]*accel_desired>=0 ) {
+        if (a_zero_accel_effort > 0) {
+          analogWrite(A_ZERO_FWD_PIN, a_zero_accel_effort);
+          analogWrite(A_ZERO_BCK_PIN, 0);
+          //digitalWrite(A_ZERO_FWD_PIN, 0);
+          //digitalWrite(A_ZERO_BCK_PIN, 1);
+        } else {
+          analogWrite(A_ZERO_FWD_PIN, 0);
+          analogWrite(A_ZERO_BCK_PIN, -a_zero_accel_effort);
+          //analogWrite(A_ZERO_PWM_PIN, -a_zero_accel_effort);
+          //digitalWrite(A_ZERO_FWD_PIN, 1);
+          //digitalWrite(A_ZERO_BCK_PIN, 0);
+        }
+      //} else {
+        // Apply Break
+      //  analogWrite(A_ZERO_FWD_PIN, 0);
+      //  analogWrite(A_ZERO_BCK_PIN, 0);
+      //}
+      */
       // Do not limit to the desired angle only. Allow to pass over the desired angle if deacceleration is not possible
       float new_angle = (long)j_angle_current[i] + (long)j_speed_current[i]*(long)ORM_SPEED_UPDATE_INTERVAL_MS / (long)ORM_MS_IN_SECOND ;
       long new_angle_diff = j_angle_desired[i] - new_angle;
@@ -473,8 +604,9 @@ void ORM::ospSerialLoop(){
 
 void ORM::setup(){
    // Timer2: fast PWM, prescaler = 1 -> ~31.37 kHz
-  TCCR2B = (TCCR2B & 0b11111000) | 0x01;
-
+  //TCCR2B = (TCCR2B & 0b11111000) | 0x05;
+  // Timer1: fast PWM, prescaler = 1 -> ~31.37 kHz
+  TCCR1B = (TCCR1B & 0b11111000) | 0x01;  // prescaler 1024
   Serial.begin(115200);
   Serial.setTimeout(0.01);
 
@@ -482,6 +614,8 @@ void ORM::setup(){
 
   // Initing the current address
   current_address = 0;
+  control_mode = CONTROL_MODE_PID;
+  control_pwm = 0;
 
   // Enable pull-up resistors for address pins
   pinMode(2, INPUT_PULLUP);
@@ -500,21 +634,21 @@ void ORM::setup(){
   speed_millis = millis();
 
   
-  if (motor_power!=0){
-    pinMode(MOTOR_POWER_PIN, OUTPUT);
-    digitalWrite(MOTOR_POWER_PIN,LOW);
-  } else {
-    pinMode(MOTOR_POWER_PIN, OUTPUT);
-    digitalWrite(MOTOR_POWER_PIN,HIGH);
-  }
+  //if (motor_power!=0){
+  pinMode(MOTOR_POWER_PIN, OUTPUT);
+  digitalWrite(MOTOR_POWER_PIN,LOW);
+  //} else {
+  //  pinMode(MOTOR_POWER_PIN, OUTPUT);
+  //  digitalWrite(MOTOR_POWER_PIN,HIGH);
+  //}
 
 // By default - no torque to be applied to PWM
   pinMode(A_ZERO_PWM_PIN, OUTPUT);
   analogWrite(A_ZERO_PWM_PIN, 0);
   pinMode(A_ZERO_FWD_PIN, OUTPUT);
-  digitalWrite(A_ZERO_FWD_PIN, 1);
+  analogWrite(A_ZERO_FWD_PIN, 0);
   pinMode(A_ZERO_BCK_PIN, OUTPUT);
-  digitalWrite(A_ZERO_BCK_PIN,0);
+  analogWrite(A_ZERO_BCK_PIN,0);
   
   /*
   joints[0] = &j0;
@@ -530,9 +664,20 @@ void ORM::setup(){
   PID_A_ZERO_SPEED.SetMode(AUTOMATIC);
   PID_A_ZERO_SPEED.SetOutputLimits(-255, 255);
 
+  PID_A_ZERO_ACCEL.SetMode(AUTOMATIC);
+  PID_A_ZERO_ACCEL.SetOutputLimits(-255, 255);
+
+  Kp = DEFAULT_PID_KP;
+  Ki = DEFAULT_PID_KI;
+  Kd = DEFAULT_PID_KD;
+  loadPidFromEeprom();
+
   // Read the current value of the angles
   updateSensorsMeasurements();
 
+  unsigned short calib_magic = 0;
+  EEPROM.get(EEPROM_CALIB_MAGIC_OFFSET, calib_magic);
+  bool calib_valid = (calib_magic == CALIB_EEPROM_MAGIC);
 
   // Set the desired value of the angle
 /*
@@ -568,30 +713,43 @@ void ORM::setup(){
    joints[i]->setMaxSpeed((long)j_speed_desired[i] * (long)orm_j_stepper_full_rot[i] / (long)orm_max_int_angle);
    //joints[i]->setSpeed(100);*/
    // LOAD CORRECTION ANGLE
-   EEPROM.get(i*sizeof(short),j_angle_correction[i]); 
+   if (calib_valid) {
+     EEPROM.get(EEPROM_ANGLE_CORRECTION_OFFSET + i*sizeof(short), j_angle_correction[i]); 
+   } else {
+     j_angle_correction[i] = 0;
+   }
    j_angle_current[i]  = 0;
 
-   EEPROM.get(EEPROM_ANGLE_WIDTH_OFFSET+i*sizeof(short),j_angle_width[i]); 
+   if (calib_valid) {
+     EEPROM.get(EEPROM_ANGLE_WIDTH_OFFSET+i*sizeof(short),j_angle_width[i]); 
+   } else {
+     j_angle_width[i] = 16384;
+   }
    if(j_angle_width[i]<=0) {
      j_angle_width[i] = 16384;
    }
 
-   EEPROM.get(EEPROM_DEFAULT_ANGLE_OFFSET+i*sizeof(short),j_angle_desired[i]); 
+   if (calib_valid) {
+     EEPROM.get(EEPROM_DEFAULT_ANGLE_OFFSET+i*sizeof(short),j_angle_desired[i]); 
+   } else {
+     j_angle_desired[i] = 0;
+   }
    
    unsigned short zero_adc = 0;
    unsigned short max_adc = 0;  
 
-   EEPROM.get(EEPROM_SERVO_ZERO_ANGLE_ADC+i*sizeof(short),zero_adc);
+   if (calib_valid) {
+     EEPROM.get(EEPROM_SERVO_ZERO_ANGLE_ADC+i*sizeof(short),zero_adc);
+     EEPROM.get(EEPROM_SERVO_MAX_ANGLE_ADC+i*sizeof(short),max_adc);
+   }
 
-   EEPROM.get(EEPROM_SERVO_MAX_ANGLE_ADC+i*sizeof(short),max_adc);
-
-   //if (zero_adc == 0) {
+   if (!calib_valid || zero_adc == 0) {
     zero_adc = default_servo_zero_angle[i];
-   //} 
+   } 
    servo_zero_angle[i] = zero_adc;
-   //if (max_adc ==0 ) {
+   if (!calib_valid || max_adc ==0 ) {
     max_adc = default_servo_max_angle[i];
-   //}
+   }
    servo_max_angle[i] = max_adc;
 
  }

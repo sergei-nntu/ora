@@ -23,7 +23,7 @@
 // Update Interval in Milliseconds
 #define UPDATE_INTERVAL  100 // 10 Hz
 
-#define ADC_SAMPLES_N  3
+#define ADC_SAMPLES_N  4
 
 #define MOTOR_POWER_PIN   12
 
@@ -47,7 +47,7 @@ const short orm_j_stepper_full_rot[ORA_JOINTS_COUNT] = {16000};  // Number of st
 
 const short orm_j_speed_max[ORA_JOINTS_COUNT] =     {3000};
 const short orm_j_speed_min[ORA_JOINTS_COUNT] =     {400};
-const short orm_j_acceleration[ORA_JOINTS_COUNT] =  {500};
+const short orm_j_acceleration[ORA_JOINTS_COUNT] =  {250};
 
 const  int default_servo_zero_angle[ORA_JOINTS_COUNT] = {2700};
 const  int default_servo_max_angle[ORA_JOINTS_COUNT] = {28500};
@@ -67,6 +67,9 @@ class ORM {
     short j_speed_desired[ORA_JOINTS_COUNT] =   {500}; // Default Speed 11.25 degrees second. Must be populated in the constructor
     short j_speed_current[ORA_JOINTS_COUNT] =   {0};
     short j_speed_read[ORA_JOINTS_COUNT] =      {0};
+    short j_speed_read_prev[ORA_JOINTS_COUNT] = {0};
+    long j_accel_read[ORA_JOINTS_COUNT] = {0};
+    long j_accel_prev[ORA_JOINTS_COUNT] = {0};
     short j_angle_desired[ORA_JOINTS_COUNT] =   {0};
     short j_angle_current[ORA_JOINTS_COUNT] =   {0};
     short j_angle_read[ORA_JOINTS_COUNT] =      {0};
@@ -119,6 +122,7 @@ class ORM {
     void cmdSetCorrAngle();
     void cmdSetAngleWidth();
     void cmdSetMotorPower();
+    void cmdSetForcePwm();
 
     void cmdSetPidProportional();
     void cmdSetPidIntegral();
@@ -143,8 +147,14 @@ class ORM {
     double getPidIntegral();
     double getPidDifferential();
 
+    void loadPidFromEeprom();
+    void savePidToEeprom();
+    void saveCalibrationToEeprom(int jointNo);
+
     void _updateMotorDCTunings();
     unsigned long last_millis; 
+    int control_pwm = 0;
+    int control_mode = 0;
 
   public:
     // Method to poll the Serial input. Should be called at least once per the execution loop

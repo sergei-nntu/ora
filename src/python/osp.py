@@ -91,6 +91,9 @@ OSP_OQP_CMD_INFO_ANGLE_WIDTH  = 0x36
 OSP_OQP_CMD_INFO_DEFAULT_ANGLE  = 0x37
 
 OSP_ORA_CMD_SET_ANGLE = 0x02
+OSP_ORA_CMD_SET_FORCE_PWM = 0x0F
+OSP_ORA_CMD_SET_CORR_ANGLE = 0x05
+OSP_ORA_CMD_SET_ANGLE_WIDTH = 0x06
 OSP_ORA_CMD_SET_PID_PROPORTIONAL = 0x07
 OSP_ORA_CMD_SET_PID_INTEGRAL = 0x08
 OSP_ORA_CMD_SET_PID_DIFFERENTIAL = 0x09
@@ -247,6 +250,70 @@ class OSP:
         cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (angle >> 8) &0xff
         cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xff
         cmd_bytes[OSP_ORM_ANGLE_FORCE_INDEX] = force
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_force_pwm(self, address, pwm):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_FORCE_PWM
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        pwm_value = int(pwm)
+        if pwm_value > 255:
+            pwm_value = 255
+        elif pwm_value < -255:
+            pwm_value = -255
+        if pwm_value < 0:
+            pwm_value = (pwm_value + 0x10000) & 0xffff
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (pwm_value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = pwm_value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_pid_proportional(self, address, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_PID_PROPORTIONAL
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        value_int = int(value * 10000)
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value_int >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value_int & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_pid_integral(self, address, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_PID_INTEGRAL
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        value_int = int(value * 10000)
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value_int >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value_int & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_pid_differential(self, address, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_PID_DIFFERENTIAL
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        value_int = int(value * 10000)
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value_int >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value_int & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_corr_angle(self, address, angle):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_CORR_ANGLE
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (angle >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_angle_width(self, address, angle):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_ANGLE_WIDTH
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (angle >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xff
         self.osp_send_command(cmd_bytes)
         
     def set_speed(self, joint, speed):
@@ -701,5 +768,3 @@ def find_osp_peripheral(osp_dev_type):
         dev.stop()
     
     return list(devs_of_type)
-
-
