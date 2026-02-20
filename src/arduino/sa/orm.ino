@@ -21,8 +21,8 @@ Servo js5;  // Joint Servo 5
 */
 
 
-#define MIN_PWM 140 // Good 110, last 78
-#define MAX_PWM 255
+const int MIN_PWM_DEFAULT = 120; // Good 110, last 78
+const int MAX_PWM = 255;
 
 double input_a_zero = 0;  // Current Position of Actuator 0
 double output_a_zero = 0; // Desired Effort to Apply -255 .. 255
@@ -75,6 +75,16 @@ const int EEPROM_PID_KI_OFFSET = EEPROM_PID_KP_OFFSET + sizeof(double);
 const int EEPROM_PID_KD_OFFSET = EEPROM_PID_KI_OFFSET + sizeof(double);
 const unsigned short CALIB_EEPROM_MAGIC = 0xC3C3;
 const int EEPROM_CALIB_MAGIC_OFFSET = EEPROM_PID_KD_OFFSET + sizeof(double);
+const int EEPROM_SPEED_MAX_OFFSET = EEPROM_CALIB_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_ACCELERATION_OFFSET = EEPROM_SPEED_MAX_OFFSET + ORA_JOINTS_COUNT * sizeof(short);
+const unsigned short MOTION_EEPROM_MAGIC = 0xC4C4;
+const int EEPROM_MOTION_MAGIC_OFFSET = EEPROM_ACCELERATION_OFFSET + ORA_JOINTS_COUNT * sizeof(short);
+const int EEPROM_MIN_PWM_OFFSET = EEPROM_MOTION_MAGIC_OFFSET + sizeof(unsigned short);
+const unsigned short PWM_EEPROM_MAGIC = 0xC5C5;
+const int EEPROM_PWM_MAGIC_OFFSET = EEPROM_MIN_PWM_OFFSET + sizeof(short);
+const int EEPROM_ADC_SAMPLES_N_OFFSET = EEPROM_PWM_MAGIC_OFFSET + sizeof(unsigned short);
+const unsigned short ADC_SAMPLES_EEPROM_MAGIC = 0xC6C6;
+const int EEPROM_ADC_SAMPLES_MAGIC_OFFSET = EEPROM_ADC_SAMPLES_N_OFFSET + sizeof(short);
 
 const int PID_MODE_SPEED = 1;
 const int PID_MODE_ANGLE = 2;
@@ -107,6 +117,56 @@ void ORM::cmdSetAngleWidth(){
   int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   j_angle_width[ORA_INDEX] = angle;
   saveCalibrationToEeprom(ORA_INDEX);
+}
+
+void ORM::cmdSetMaxSpeed(){
+  int speed = (short)(((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX]);
+  if (speed < 0) {
+    speed = 0;
+  } else if (speed > 32767) {
+    speed = 32767;
+  }
+  j_speed_max[ORA_INDEX] = speed;
+  saveMotionLimitsToEeprom(ORA_INDEX);
+}
+
+void ORM::cmdSetAcceleration(){
+  int accel = (short)(((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX]);
+  if (accel < 0) {
+    accel = 0;
+  } else if (accel > 32767) {
+    accel = 32767;
+  }
+  j_acceleration[ORA_INDEX] = accel;
+  saveMotionLimitsToEeprom(ORA_INDEX);
+}
+
+void ORM::cmdSetMinPwm(){
+  int pwm = (short)(((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX]);
+  if (pwm < 0) {
+    pwm = 0;
+  } else if (pwm > MAX_PWM) {
+    pwm = MAX_PWM;
+  }
+  min_pwm = pwm;
+  saveMinPwmToEeprom();
+}
+
+void ORM::cmdSetAdcSamplesN(){
+  int samples = (short)(((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX]);
+  if (samples < 1) {
+    samples = 1;
+  } else if (samples > ADC_SAMPLES_N_MAX) {
+    samples = ADC_SAMPLES_N_MAX;
+  }
+  adc_samples_n = samples;
+  if (j_angle_samples_ptr >= adc_samples_n) {
+    j_angle_samples_ptr = 0;
+  }
+  if (j_angle_samples_count > adc_samples_n) {
+    j_angle_samples_count = adc_samples_n;
+  }
+  saveAdcSamplesToEeprom();
 }
 
 void ORM::cmdSetForcePwm(){
@@ -201,6 +261,22 @@ void ORM::saveCalibrationToEeprom(int jointNo) {
   EEPROM.put(EEPROM_CALIB_MAGIC_OFFSET, (unsigned short)CALIB_EEPROM_MAGIC);
 }
 
+void ORM::saveMotionLimitsToEeprom(int jointNo) {
+  EEPROM.put(EEPROM_SPEED_MAX_OFFSET + jointNo * sizeof(short), j_speed_max[jointNo]);
+  EEPROM.put(EEPROM_ACCELERATION_OFFSET + jointNo * sizeof(short), j_acceleration[jointNo]);
+  EEPROM.put(EEPROM_MOTION_MAGIC_OFFSET, (unsigned short)MOTION_EEPROM_MAGIC);
+}
+
+void ORM::saveMinPwmToEeprom() {
+  EEPROM.put(EEPROM_MIN_PWM_OFFSET, (short)min_pwm);
+  EEPROM.put(EEPROM_PWM_MAGIC_OFFSET, (unsigned short)PWM_EEPROM_MAGIC);
+}
+
+void ORM::saveAdcSamplesToEeprom() {
+  EEPROM.put(EEPROM_ADC_SAMPLES_N_OFFSET, (short)adc_samples_n);
+  EEPROM.put(EEPROM_ADC_SAMPLES_MAGIC_OFFSET, (unsigned short)ADC_SAMPLES_EEPROM_MAGIC);
+}
+
 void ORM::ospHandleORACommand(){
   int address = osp_input_buffer[OSP_ORA_ADDRESS_INDEX];
 
@@ -227,6 +303,18 @@ void ORM::ospHandleORACommand(){
     }
     if (cmd == OSP_ORA_CMD_SET_FORCE_PWM){
       cmdSetForcePwm();
+    }
+    if (cmd == OSP_ORA_CMD_SET_MAX_SPEED){
+      cmdSetMaxSpeed();
+    }
+    if (cmd == OSP_ORA_CMD_SET_ACCELERATION){
+      cmdSetAcceleration();
+    }
+    if (cmd == OSP_ORA_CMD_SET_MIN_PWM){
+      cmdSetMinPwm();
+    }
+    if (cmd == OSP_ORA_CMD_SET_ADC_SAMPLES_N){
+      cmdSetAdcSamplesN();
     }
   } else {
     // Re-transmit command if not addressed to this device
@@ -398,7 +486,7 @@ void ORM::updateActuatorsPosition(){
       long angle_diff = j_angle_desired[i] - j_angle_read[i];
       long direction = sgn(angle_diff);
 
-      long accelerate_speed =(long)j_speed_current[i] + direction*(long)orm_j_acceleration[i]*(long)ORM_SPEED_UPDATE_INTERVAL_MS / (long)ORM_MS_IN_SECOND;
+      long accelerate_speed =(long)j_speed_current[i] + direction*(long)j_acceleration[i]*(long)ORM_SPEED_UPDATE_INTERVAL_MS / (long)ORM_MS_IN_SECOND;
 
       long abs_angle_diff = angle_diff * direction;
 
@@ -422,7 +510,7 @@ void ORM::updateActuatorsPosition(){
 
       int a_zero_effort = (int)output_a_zero;
 
-      a_zero_effort = int(sgn(a_zero_effort)*((float)MIN_PWM + (float)abs(a_zero_effort)*((float)MAX_PWM - (float)MIN_PWM)/(float)MAX_PWM));
+      a_zero_effort = int(sgn(a_zero_effort)*((float)min_pwm + (float)abs(a_zero_effort)*((float)MAX_PWM - (float)min_pwm)/(float)MAX_PWM));
 /*
       abs_angle_diff-=300;
       if(abs_angle_diff<0){
@@ -430,7 +518,7 @@ void ORM::updateActuatorsPosition(){
       }
 */
       long sqrt_angle_diff = isqrt(abs_angle_diff);
-      long accel_sqrt = (long)isqrt(2*orm_j_acceleration[i]);
+      long accel_sqrt = (long)isqrt(2*j_acceleration[i]);
 
       float deaccelerate_speed = (long)direction*(long)sqrt_angle_diff * (long)accel_sqrt * (long)ORM_SPEED_UPDATE_INTERVAL_MS / (long)ORM_MS_IN_SECOND; 
       
@@ -438,7 +526,7 @@ void ORM::updateActuatorsPosition(){
 
       // deaccelerate_speed -= ORM_SPEED_UPDATE_INTERVAL_MS * orm_j_acceleration[i] / ORM_MS_IN_SECOND;
 
-      long max_speed = direction * orm_j_speed_max[i];
+      long max_speed = direction * j_speed_max[i];
 
       long result_speed = min(min(direction*max_speed,direction*accelerate_speed),direction*deaccelerate_speed);
 
@@ -459,10 +547,10 @@ void ORM::updateActuatorsPosition(){
       PID_A_ZERO_SPEED.Compute();
 
       int a_zero_speed_effort = output_a_zero_speed;
-      a_zero_speed_effort = sgn(a_zero_speed_effort)*(MIN_PWM + abs(a_zero_speed_effort)*(MAX_PWM - MIN_PWM)/MAX_PWM);
+      a_zero_speed_effort = sgn(a_zero_speed_effort)*(min_pwm + (long)abs(a_zero_speed_effort)*(long)(MAX_PWM - min_pwm)/(long)MAX_PWM);
 
       int a_zero_accel_effort = output_a_zero_accel;
-      a_zero_accel_effort = sgn(a_zero_accel_effort)*(MIN_PWM + abs(a_zero_accel_effort)*(MAX_PWM - MIN_PWM)/MAX_PWM);
+      a_zero_accel_effort = sgn(a_zero_accel_effort)*(min_pwm + (long)abs(a_zero_accel_effort)*(long)(MAX_PWM - min_pwm)/(long)MAX_PWM);
 
 
 
@@ -554,8 +642,8 @@ void ORM::updateSensorsMeasurements(){
     j_angle_read_samples[i][j_angle_samples_ptr] = angle_int;
   }
   j_angle_samples_ptr++;
-  j_angle_samples_ptr %= ADC_SAMPLES_N;
-  if(j_angle_samples_count<ADC_SAMPLES_N){
+  j_angle_samples_ptr %= adc_samples_n;
+  if(j_angle_samples_count<adc_samples_n){
     j_angle_samples_count++;
   }
   for(int i=0;i<ORA_JOINTS_COUNT;i++){
@@ -678,6 +766,15 @@ void ORM::setup(){
   unsigned short calib_magic = 0;
   EEPROM.get(EEPROM_CALIB_MAGIC_OFFSET, calib_magic);
   bool calib_valid = (calib_magic == CALIB_EEPROM_MAGIC);
+  unsigned short motion_magic = 0;
+  EEPROM.get(EEPROM_MOTION_MAGIC_OFFSET, motion_magic);
+  bool motion_valid = (motion_magic == MOTION_EEPROM_MAGIC);
+  unsigned short pwm_magic = 0;
+  EEPROM.get(EEPROM_PWM_MAGIC_OFFSET, pwm_magic);
+  bool pwm_valid = (pwm_magic == PWM_EEPROM_MAGIC);
+  unsigned short adc_samples_magic = 0;
+  EEPROM.get(EEPROM_ADC_SAMPLES_MAGIC_OFFSET, adc_samples_magic);
+  bool adc_samples_valid = (adc_samples_magic == ADC_SAMPLES_EEPROM_MAGIC);
 
   // Set the desired value of the angle
 /*
@@ -752,7 +849,38 @@ void ORM::setup(){
    }
    servo_max_angle[i] = max_adc;
 
+   j_speed_max[i] = orm_j_speed_max_default[i];
+   j_acceleration[i] = orm_j_acceleration_default[i];
+   if (motion_valid) {
+     EEPROM.get(EEPROM_SPEED_MAX_OFFSET + i*sizeof(short), j_speed_max[i]);
+     EEPROM.get(EEPROM_ACCELERATION_OFFSET + i*sizeof(short), j_acceleration[i]);
+   }
+   if (j_speed_max[i] <= 0) {
+     j_speed_max[i] = orm_j_speed_max_default[i];
+   }
+   if (j_acceleration[i] <= 0) {
+     j_acceleration[i] = orm_j_acceleration_default[i];
+   }
+
  }
+
+  min_pwm = MIN_PWM_DEFAULT;
+  if (pwm_valid) {
+    short eeprom_min_pwm = 0;
+    EEPROM.get(EEPROM_MIN_PWM_OFFSET, eeprom_min_pwm);
+    if (eeprom_min_pwm >= 0 && eeprom_min_pwm <= MAX_PWM) {
+      min_pwm = eeprom_min_pwm;
+    }
+  }
+
+  adc_samples_n = ADC_SAMPLES_N_MAX;
+  if (adc_samples_valid) {
+    short eeprom_adc_samples = 0;
+    EEPROM.get(EEPROM_ADC_SAMPLES_N_OFFSET, eeprom_adc_samples);
+    if (eeprom_adc_samples >= 1 && eeprom_adc_samples <= ADC_SAMPLES_N_MAX) {
+      adc_samples_n = eeprom_adc_samples;
+    }
+  }
 
   // For now setting the desired angle to the one that was read at the start 
   j_angle_desired[0] = j_angle_read[0];

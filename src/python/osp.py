@@ -97,6 +97,10 @@ OSP_ORA_CMD_SET_ANGLE_WIDTH = 0x06
 OSP_ORA_CMD_SET_PID_PROPORTIONAL = 0x07
 OSP_ORA_CMD_SET_PID_INTEGRAL = 0x08
 OSP_ORA_CMD_SET_PID_DIFFERENTIAL = 0x09
+OSP_ORA_CMD_SET_MAX_SPEED = 0x10
+OSP_ORA_CMD_SET_ACCELERATION = 0x11
+OSP_ORA_CMD_SET_MIN_PWM = 0x12
+OSP_ORA_CMD_SET_ADC_SAMPLES_N = 0x13
 
 OSP_OQP_DURATION_MSB_INDEX = 5
 OSP_OQP_DURATION_LSB_INDEX = 4
@@ -314,6 +318,60 @@ class OSP:
         cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
         cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (angle >> 8) & 0xff
         cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_max_speed(self, address, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_MAX_SPEED
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        speed_value = int(value)
+        if speed_value < 0:
+            speed_value = 0
+        elif speed_value > 32767:
+            speed_value = 32767
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (speed_value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = speed_value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_acceleration(self, address, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_ACCELERATION
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        accel_value = int(value)
+        if accel_value < 0:
+            accel_value = 0
+        elif accel_value > 32767:
+            accel_value = 32767
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (accel_value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = accel_value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_min_pwm(self, address, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_MIN_PWM
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        pwm_value = int(value)
+        if pwm_value < 0:
+            pwm_value = 0
+        elif pwm_value > 255:
+            pwm_value = 255
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (pwm_value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = pwm_value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_adc_samples_n(self, address, value):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_ADC_SAMPLES_N
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        samples_value = int(value)
+        if samples_value < 1:
+            samples_value = 1
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (samples_value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = samples_value & 0xff
         self.osp_send_command(cmd_bytes)
         
     def set_speed(self, joint, speed):
