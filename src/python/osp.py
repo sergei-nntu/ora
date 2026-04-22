@@ -186,7 +186,7 @@ class OSP:
     
     def __init__(self,port_name):
         # '/dev/ttyACM1'
-        self.osp_serial = serial.Serial(port=port_name, baudrate=115200, timeout=.1)
+        self.osp_serial = serial.Serial(port=port_name, baudrate=57600, timeout=.1)
         #print("Starting Output Thread")
         self.output_thread = threading.Thread(target=self.output_thread, daemon=True)  
         self.output_thread.start()
@@ -747,11 +747,13 @@ class OSP:
                 bts = self.osp_serial.read()
                 #print("Bytes_Read:"+str(bts))
                 if len(bts)>0:
-                    #print("Bytes_Read:"+str(bts))
+                    #print("Bytes_Read:"+str(bts)+"\n")
+                    #print("Intermediary Buffer:"+str(self.input_buffer))
                     bt = bts[0]
                     if self.command_buffer_pattern[self.input_index] == bt or self.command_buffer_pattern[self.input_index] ==0:
                         self.input_buffer[self.input_index] = bt
                         self.input_index += 1
+                        #print("Intermediary Buffer:"+str(self.input_buffer))
                         if self.input_index >= len(self.command_buffer_pattern):
                             #print("Command Received:"+str(self.input_buffer))
                             if self.input_buffer[OSP_MSG_DEV_INDEX] == OSP_DEV_OBP:

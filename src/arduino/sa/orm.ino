@@ -508,9 +508,9 @@ void ORM::updateActuatorsPosition(){
 
       PID_A_ZERO.Compute();
 
-      int a_zero_effort = (int)output_a_zero;
+      //int a_zero_effort = (int)output_a_zero;
 
-      a_zero_effort = int(sgn(a_zero_effort)*((float)min_pwm + (float)abs(a_zero_effort)*((float)MAX_PWM - (float)min_pwm)/(float)MAX_PWM));
+      //a_zero_effort = int(sgn(a_zero_effort)*((float)min_pwm + (float)abs(a_zero_effort)*((float)MAX_PWM - (float)min_pwm)/(float)MAX_PWM));
 /*
       abs_angle_diff-=300;
       if(abs_angle_diff<0){
@@ -549,8 +549,8 @@ void ORM::updateActuatorsPosition(){
       int a_zero_speed_effort = output_a_zero_speed;
       a_zero_speed_effort = sgn(a_zero_speed_effort)*(min_pwm + (long)abs(a_zero_speed_effort)*(long)(MAX_PWM - min_pwm)/(long)MAX_PWM);
 
-      int a_zero_accel_effort = output_a_zero_accel;
-      a_zero_accel_effort = sgn(a_zero_accel_effort)*(min_pwm + (long)abs(a_zero_accel_effort)*(long)(MAX_PWM - min_pwm)/(long)MAX_PWM);
+      //int a_zero_accel_effort = output_a_zero_accel;
+      //a_zero_accel_effort = sgn(a_zero_accel_effort)*(min_pwm + (long)abs(a_zero_accel_effort)*(long)(MAX_PWM - min_pwm)/(long)MAX_PWM);
 
 
 
@@ -695,7 +695,8 @@ void ORM::setup(){
   //TCCR2B = (TCCR2B & 0b11111000) | 0x05;
   // Timer1: fast PWM, prescaler = 1 -> ~31.37 kHz
   TCCR1B = (TCCR1B & 0b11111000) | 0x01;  // prescaler 1024
-  Serial.begin(115200);
+  //Serial.begin(115200);
+  Serial.begin(57600);
   Serial.setTimeout(0.01);
 
   //analogReference(EXTERNAL);

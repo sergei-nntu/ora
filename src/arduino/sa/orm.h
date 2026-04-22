@@ -23,7 +23,9 @@
 // Update Interval in Milliseconds
 #define UPDATE_INTERVAL  100 // 10 Hz
 
-#define ADC_SAMPLES_N_MAX  8
+
+//#define ADC_SAMPLES_N_MAX  8
+#define ADC_SAMPLES_N_MAX  3
 
 #define MOTOR_POWER_PIN   12
 
