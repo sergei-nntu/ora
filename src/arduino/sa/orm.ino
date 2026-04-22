@@ -695,8 +695,8 @@ void ORM::setup(){
   //TCCR2B = (TCCR2B & 0b11111000) | 0x05;
   // Timer1: fast PWM, prescaler = 1 -> ~31.37 kHz
   TCCR1B = (TCCR1B & 0b11111000) | 0x01;  // prescaler 1024
-  //Serial.begin(115200);
-  Serial.begin(57600);
+  
+  Serial.begin(115200);
   Serial.setTimeout(0.01);
 
   //analogReference(EXTERNAL);

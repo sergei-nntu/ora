@@ -186,7 +186,7 @@ class OSP:
     
     def __init__(self,port_name):
         # '/dev/ttyACM1'
-        self.osp_serial = serial.Serial(port=port_name, baudrate=57600, timeout=.1)
+        self.osp_serial = serial.Serial(port=port_name, baudrate=115200, timeout=.1)
         #print("Starting Output Thread")
         self.output_thread = threading.Thread(target=self.output_thread, daemon=True)  
         self.output_thread.start()
