@@ -34,6 +34,9 @@
 #define A_ZERO_FWD_PIN 10
 #define A_ZERO_BCK_PIN 9
 
+#define BTS_L_EN 8
+#define BTS_R_EN 11
+
 // Convenience sign function
 #define sgn(x) ((x) < 0 ? -1 : ((x) > 0 ? 1 : 0))
 

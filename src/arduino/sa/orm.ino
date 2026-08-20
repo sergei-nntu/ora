@@ -732,12 +732,15 @@ void ORM::setup(){
   //}
 
 // By default - no torque to be applied to PWM
-  pinMode(A_ZERO_PWM_PIN, OUTPUT);
-  analogWrite(A_ZERO_PWM_PIN, 0);
   pinMode(A_ZERO_FWD_PIN, OUTPUT);
   analogWrite(A_ZERO_FWD_PIN, 0);
   pinMode(A_ZERO_BCK_PIN, OUTPUT);
   analogWrite(A_ZERO_BCK_PIN,0);
+
+  pinMode(BTS_L_EN, OUTPUT);
+  pinMode(BTS_R_EN, OUTPUT);
+  digitalWrite(BTS_L_EN, 1);
+  digitalWrite(BTS_R_EN, 1);
   
   /*
   joints[0] = &j0;
