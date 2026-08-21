@@ -472,36 +472,40 @@ void ORM::updateActuatorsPosition(){
 
       if(impulse_debt_speed_diff_sign!=0 && speed_diff_sign_prev!=0 && impulse_debt_speed_diff_sign!=speed_diff_sign_prev){
 
-        speed_control_effort -= impulse_debt * 6 / 10;
+        if(abs(angle_diff)<750){
+          speed_control_effort -= impulse_debt * 6 / 10;
+        } else {
+          speed_control_effort -= impulse_debt * 0 / 10;
+        }
         impulse_debt = 0;
       }
 
-      if(speed_control_effort>MAX_PWM){
-        speed_control_effort = MAX_PWM;
-      } else if(speed_control_effort<-MAX_PWM){
-        speed_control_effort = -MAX_PWM;
+      if(speed_control_effort>MAX_PWM*100){
+        speed_control_effort = MAX_PWM*100;
+      } else if(speed_control_effort<-MAX_PWM*100){
+        speed_control_effort = -MAX_PWM*100;
       }
 
       int speed_control_effort_before = speed_control_effort;
       if(speed_diff_sign>0){
-        if(abs(angle_diff)<1000){
-          speed_control_effort += max(1,abs(speed_diff)/1000);//ORM_SPEED_UPDATE_INTERVAL_MS*(isqrt(abs(speed_diff)/10))/100;
+        if(abs(angle_diff)<750){
+          speed_control_effort += 100*max(1,abs(speed_diff)/1000);//ORM_SPEED_UPDATE_INTERVAL_MS*(isqrt(abs(speed_diff)/10))/100;
         } else {
-          speed_control_effort += 1;
+          speed_control_effort += 50*max(1,abs(speed_diff)/1000);
         }
         //speed_control_effort += 5;
       } else if(speed_diff_sign<0){
-        if(abs(angle_diff)<1000){
-          speed_control_effort -= max(1,abs(speed_diff)/1000);//ORM_SPEED_UPDATE_INTERVAL_MS*(isqrt(abs(speed_diff)/10))/100;
+        if(abs(angle_diff)<750){
+          speed_control_effort -= 100*max(1,abs(speed_diff)/1000);//ORM_SPEED_UPDATE_INTERVAL_MS*(isqrt(abs(speed_diff)/10))/100;
         } else {
-          speed_control_effort -= 1;
+          speed_control_effort -= 50*max(1,abs(speed_diff)/1000);
         }
       }
 
-      if(speed_control_effort>MAX_PWM){
-        speed_control_effort = MAX_PWM;
-      } else if(speed_control_effort<-MAX_PWM){
-        speed_control_effort = -MAX_PWM;
+      if(speed_control_effort>MAX_PWM*100){
+        speed_control_effort = MAX_PWM*100;
+      } else if(speed_control_effort<-MAX_PWM*100){
+        speed_control_effort = -MAX_PWM*100;
       }
       impulse_debt += speed_control_effort - speed_control_effort_before;
       if(impulse_debt_speed_diff_sign!=0){
@@ -509,7 +513,7 @@ void ORM::updateActuatorsPosition(){
       }
     }
 
-    int a_zero_speed_effort = speed_control_effort;
+    int a_zero_speed_effort = speed_control_effort/100;
 
     if(a_zero_speed_effort>MAX_PWM){
       a_zero_speed_effort = MAX_PWM;
