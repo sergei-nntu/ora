@@ -1,0 +1,198 @@
+<?xml version="1.0"?>
+<robot name="orm_r3">
+
+  <!--
+    ORM R3 kinematic model
+
+    Coordinate convention:
+      +X = forward
+      +Y = left
+      +Z = up
+
+    Rotation direction convention:
+      Clockwise/counterclockwise is defined while looking
+      from the positive side of the physical rotation axis
+      toward the joint.
+
+    Joint numbering is zero-based.
+    Dimensions are in meters.
+    Joint limits are +/-135 degrees (+/-2.35619449 radians).
+  -->
+
+  <!-- Links -->
+
+  <link name="base_link"/>
+  <link name="link0"/>
+  <link name="link1"/>
+  <link name="link2"/>
+  <link name="link3"/>
+  <link name="link4"/>
+  <link name="link5"/>
+  <link name="tool0"/>
+
+
+  <!--
+    Joint 0
+    Position: (0, 0, 0)
+    Rotation around Z
+  -->
+  <joint name="joint0" type="revolute">
+    <parent link="base_link"/>
+    <child link="link0"/>
+
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+
+    <limit
+      lower="-2.35619449"
+      upper="2.35619449"
+      effort="1.0"
+      velocity="1.0"/>
+  </joint>
+
+
+  <!--
+    Joint 1
+    Position relative to joint0:
+      x =   0 mm
+      y = +64 mm
+      z = +38 mm
+
+    Rotation around Y
+    Positive actuator direction = clockwise
+    Therefore URDF axis = -Y
+  -->
+  <joint name="joint1" type="revolute">
+    <parent link="link0"/>
+    <child link="link1"/>
+
+    <origin xyz="0 0.064 0.038" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+
+    <limit
+      lower="-2.35619449"
+      upper="2.35619449"
+      effort="1.0"
+      velocity="1.0"/>
+  </joint>
+
+
+  <!--
+    Joint 2
+    Position relative to joint1:
+      x =    0 mm
+      y =    0 mm
+      z = +228 mm
+
+    Rotation around Y
+    Positive actuator direction = counterclockwise
+    Therefore URDF axis = +Y
+  -->
+  <joint name="joint2" type="revolute">
+    <parent link="link1"/>
+    <child link="link2"/>
+
+    <origin xyz="0 0 0.228" rpy="0 0 0"/>
+    <axis xyz="0 -1 0"/>
+
+    <limit
+      lower="-2.35619449"
+      upper="2.35619449"
+      effort="1.0"
+      velocity="1.0"/>
+  </joint>
+
+
+  <!--
+    Joint 3
+    Position relative to joint2:
+      x =    0 mm
+      y =  -55 mm
+      z = +210 mm
+
+    Rotation around Y
+    Positive actuator direction = clockwise
+    Therefore URDF axis = -Y
+  -->
+  <joint name="joint3" type="revolute">
+    <parent link="link2"/>
+    <child link="link3"/>
+
+    <origin xyz="0 -0.055 0.210" rpy="0 0 0"/>
+    <axis xyz="0 -1 0"/>
+
+    <limit
+      lower="-2.35619449"
+      upper="2.35619449"
+      effort="1.0"
+      velocity="1.0"/>
+  </joint>
+
+
+  <!--
+    Joint 4
+    Position relative to joint3:
+      x =   0 mm
+      y = -41 mm
+      z = -32 mm
+
+    Rotation around Z
+    Positive actuator direction = clockwise
+    Therefore URDF axis = -Z
+  -->
+  <joint name="joint4" type="revolute">
+    <parent link="link3"/>
+    <child link="link4"/>
+
+    <origin xyz="0 -0.041 -0.032" rpy="0 0 0"/>
+    <axis xyz="0 0 -1"/>
+
+    <limit
+      lower="-2.35619449"
+      upper="2.35619449"
+      effort="1.0"
+      velocity="1.0"/>
+  </joint>
+
+
+  <!--
+    Joint 5
+    Position relative to joint4:
+      x = +32 mm
+      y =   0 mm
+      z = -41 mm
+
+    Rotation around X
+    Positive actuator direction = clockwise
+    Therefore URDF axis = -X
+  -->
+  <joint name="joint5" type="revolute">
+    <parent link="link4"/>
+    <child link="link5"/>
+
+    <origin xyz="0.032 0 -0.041" rpy="0 0 0"/>
+    <axis xyz="-1 0 0"/>
+
+    <limit
+      lower="-2.35619449"
+      upper="2.35619449"
+      effort="1.0"
+      velocity="1.0"/>
+  </joint>
+
+
+  <!--
+    Temporary end-effector / TCP frame.
+
+    Currently tool0 coincides exactly with link5.
+    This offset should be updated when the gripper/TCP
+    geometry is defined.
+  -->
+  <joint name="tool0_fixed" type="fixed">
+    <parent link="link5"/>
+    <child link="tool0"/>
+
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+</robot>

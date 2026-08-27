@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORM R3 Control</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #11151c;
+      color: #edf2f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    main {
+      width: min(100%, 620px);
+      padding: 28px;
+      border: 1px solid #344055;
+      border-radius: 20px;
+      background: #1a202b;
+      box-shadow: 0 18px 50px #0007;
+    }
+
+    h1 { margin: 0 0 6px; font-size: 1.6rem; }
+    .subtitle { margin: 0 0 24px; color: #9facbd; }
+
+    .pose {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .coordinate {
+      padding: 12px;
+      border-radius: 12px;
+      background: #111720;
+      text-align: center;
+    }
+
+    .coordinate span { display: block; color: #8e9bad; font-size: .8rem; }
+    .coordinate output { font: 600 1.15rem ui-monospace, monospace; }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 38px;
+    }
+
+    .xy-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 76px);
+      grid-template-rows: repeat(3, 68px);
+      gap: 8px;
+    }
+
+    .forward { grid-column: 2; grid-row: 1; }
+    .left { grid-column: 1; grid-row: 2; }
+    .origin { grid-column: 2; grid-row: 2; }
+    .right { grid-column: 3; grid-row: 2; }
+    .backward { grid-column: 2; grid-row: 3; }
+
+    .z-pad { display: grid; gap: 12px; }
+
+    button, .origin {
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+    }
+
+    button {
+      border: 1px solid #54647d;
+      background: #283447;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 650;
+      transition: transform 80ms, background 80ms;
+    }
+
+    button:hover { background: #35455d; }
+    button:active { transform: scale(.95); }
+    button:disabled { cursor: wait; opacity: .45; }
+    button .icon { font-size: 1.55rem; line-height: 1; }
+    button .label { font-size: .72rem; color: #bdc8d6; }
+
+    .origin {
+      border: 1px dashed #435068;
+      color: #718096;
+      font-size: .75rem;
+    }
+
+    .z-pad button { width: 88px; height: 88px; }
+    .axis-label { color: #8290a3; text-align: center; font-size: .75rem; }
+
+    #status {
+      min-height: 1.4em;
+      margin: 22px 0 0;
+      color: #8dd5a5;
+      text-align: center;
+      font-size: .9rem;
+    }
+
+    #status.error { color: #ff8e8e; }
+
+    @media (max-width: 540px) {
+      main { padding: 20px 14px; }
+      .controls { gap: 16px; }
+      .xy-pad {
+        grid-template-columns: repeat(3, 64px);
+        grid-template-rows: repeat(3, 62px);
+      }
+      .z-pad button { width: 68px; height: 82px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ORM R3 Control</h1>
+    <p class="subtitle">Cartesian movement · 10 mm per press · Arrows + Q/A</p>
+
+    <section class="pose" aria-label="Current Cartesian position">
+      <div class="coordinate"><span>X</span><output id="x">—</output></div>
+      <div class="coordinate"><span>Y</span><output id="y">—</output></div>
+      <div class="coordinate"><span>Z</span><output id="z">—</output></div>
+    </section>
+
+    <section class="controls" aria-label="Manipulator controls">
+      <div>
+        <div class="xy-pad">
+          <button class="forward" data-axis="x" data-delta="0.01" aria-label="Forward">
+            <span class="icon">↑</span><span class="label">Forward</span>
+          </button>
+          <button class="left" data-axis="y" data-delta="0.01" aria-label="Left">
+            <span class="icon">←</span><span class="label">Left</span>
+          </button>
+          <div class="origin">X / Y</div>
+          <button class="right" data-axis="y" data-delta="-0.01" aria-label="Right">
+            <span class="icon">→</span><span class="label">Right</span>
+          </button>
+          <button class="backward" data-axis="x" data-delta="-0.01" aria-label="Backward">
+            <span class="icon">↓</span><span class="label">Backward</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="z-pad">
+        <button data-axis="z" data-delta="0.01" aria-label="Up">
+          <span class="icon">▲</span><span class="label">Up</span>
+        </button>
+        <div class="axis-label">Z axis</div>
+        <button data-axis="z" data-delta="-0.01" aria-label="Down">
+          <span class="icon">▼</span><span class="label">Down</span>
+        </button>
+      </div>
+    </section>
+
+    <p id="status">Connecting to control server…</p>
+  </main>
+
+  <script>
+    const API_URL = "http://localhost:7999";
+    const pose = { x: 0, y: 0, z: 0 };
+    const buttons = [...document.querySelectorAll("button[data-axis]")];
+    const status = document.querySelector("#status");
+    let busy = false;
+
+    function renderPose() {
+      for (const axis of ["x", "y", "z"]) {
+        document.querySelector(`#${axis}`).textContent =
+          `${(pose[axis] * 1000).toFixed(1)} mm`;
+      }
+    }
+
+    function setBusy(value) {
+      busy = value;
+      buttons.forEach(button => { button.disabled = value; });
+    }
+
+    function showStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.toggle("error", isError);
+    }
+
+    async function readResponse(response) {
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return data;
+    }
+
+    function acceptPose(data) {
+      pose.x = data.position.x;
+      pose.y = data.position.y;
+      pose.z = data.position.z;
+      renderPose();
+    }
+
+    async function loadPose() {
+      setBusy(true);
+      try {
+        const response = await fetch(`${API_URL}/pose`);
+        acceptPose(await readResponse(response));
+        showStatus("Ready");
+      } catch (error) {
+        showStatus(`Connection failed: ${error.message}`, true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function move(axis, delta) {
+      if (busy) return;
+
+      const requestedPose = { ...pose, [axis]: pose[axis] + delta };
+      setBusy(true);
+      showStatus("Moving…");
+
+      try {
+        const response = await fetch(`${API_URL}/set_pose`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...requestedPose,
+            pitch: 0,
+            roll: 0,
+            yaw: 0
+          })
+        });
+        acceptPose(await readResponse(response));
+        showStatus("Command applied");
+      } catch (error) {
+        showStatus(`Command failed: ${error.message}`, true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    buttons.forEach(button => {
+      button.addEventListener("click", () => {
+        move(button.dataset.axis, Number(button.dataset.delta));
+      });
+    });
+
+    const keyboardControls = {
+      arrowup: ["x", 0.01],
+      arrowdown: ["x", -0.01],
+      arrowleft: ["y", 0.01],
+      arrowright: ["y", -0.01],
+      q: ["z", 0.01],
+      a: ["z", -0.01]
+    };
+
+    document.addEventListener("keydown", event => {
+      const control = keyboardControls[event.key.toLowerCase()];
+      if (!control) return;
+
+      event.preventDefault();
+      if (!event.repeat) move(...control);
+    });
+
+    loadPose();
+  </script>
+</body>
+</html>
