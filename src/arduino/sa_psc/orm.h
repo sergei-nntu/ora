@@ -13,7 +13,7 @@
 
 #define ORM_EFFORT_DELTA_DEFAULT 10 // Last good - 600
 
-#define ORM_SPEED_DIFF_EPSILON_DEFAULT 200 // Last good - 500
+#define ORM_SPEED_DIFF_EPSILON_DEFAULT 500 // Last good - 500
 
 #define ORM_SPEED_DIFF_IMPULSE_DEPT_EPSILON 200
 
@@ -31,9 +31,9 @@
 
 
 //#define ADC_SAMPLES_N_MAX  8
-#define ADC_SAMPLES_N_MAX  3
+#define ADC_SAMPLES_N_MAX  4
 
-#define HISTORY_RECORDS_N  1
+#define HISTORY_RECORDS_N  2
 
 #define MOTOR_POWER_PIN   12
 

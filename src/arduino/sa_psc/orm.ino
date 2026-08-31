@@ -23,6 +23,18 @@ Servo js5;  // Joint Servo 5
 const int MIN_PWM_DEFAULT = 120; // Good 110, last 78
 const int MAX_PWM = 255;
 
+// Accumulative speed control
+const long ORM_SPEED_DIFF_EPSILON = 500;                 // units/second
+const unsigned long ORM_SPEED_DIFF_REACTION_TIME = 25;   // ms
+const int ORM_SPEED_EFFORT_FACTOR = 3;
+
+// Impulse position control
+const long ORM_ANGLE_DIFF_EPSILON = 100;                  // angle units
+const long ORM_POSITION_CONTROL_ANGLE_DIFF = 500;        // angle units
+const unsigned long ORM_POSITION_CONTROL_IMPULSE_PERIOD = 100;   // ms
+const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_MIN = 3;   // ms
+const int ORM_POSITION_CONTROL_IMPULSE_MAGNITUDE = 200;
+
 //Servo gripperServo;
 
 const int ADC_MAX = 1023;
@@ -363,73 +375,88 @@ long isqrt(long x) {
     return r;
 }
 
-void ORM::updateActuatorsPosition(){  
+void ORM::updateActuatorsPosition(){
   unsigned long current_millis = millis();
-  
-  if(current_millis-speed_millis>ORM_SPEED_UPDATE_INTERVAL_MS){
+
+  // Speed controller state.
+  static unsigned long speed_effort_last_change_time = 0;
+  static bool speed_effort_has_changed = false;
+
+  // Position impulse controller state.
+  static bool position_control_active = false;
+  static bool position_control_impulse_running = false;
+  static unsigned long position_control_period_start = 0;
+  static unsigned long position_control_impulse_width = 0;
+  static int position_control_impulse_effort = 0;
+
+  if (control_mode == CONTROL_MODE_FORCE_PWM) {
+    target_angle_stable_iterations = 0;
+    position_control_active = false;
+    position_control_impulse_running = false;
+
+    if (control_pwm > 0) {
+      analogWrite(A_ZERO_FWD_PIN, control_pwm);
+      analogWrite(A_ZERO_BCK_PIN, 0);
+    } else {
+      analogWrite(A_ZERO_FWD_PIN, 0);
+      analogWrite(A_ZERO_BCK_PIN, -control_pwm);
+    }
+    return;
+  }
+
+  if (motor_power == 0) {
+    // If no motor power - just apply the same angle that is currently read.
+    j_angle_current = j_angle_read;
+    j_angle_desired = j_angle_read;
+    j_speed_current = 0;
+    speed_control_effort = 0;
+    speed_effort_has_changed = false;
+    impulse_debt = 0;
+    speed_diff_sign_prev = 0;
+    target_angle_stable_iterations = 0;
+    position_control_active = false;
+    position_control_impulse_running = false;
+    position_control_impulse_width = 0;
+    position_control_impulse_effort = 0;
+    analogWrite(A_ZERO_FWD_PIN, 0);
+    analogWrite(A_ZERO_BCK_PIN, 0);
+    return;
+  }
+
+  if (j_angle_force) {
+    // If the angle is forced - apply it immediately, no acceleration logic.
+    j_angle_current = j_angle_desired;
+    j_speed_current = 0;
+    speed_control_effort = 0;
+    speed_effort_has_changed = false;
+    impulse_debt = 0;
+    speed_diff_sign_prev = 0;
+    target_angle_stable_iterations = 0;
+    position_control_active = false;
+    position_control_impulse_running = false;
+    position_control_impulse_width = 0;
+    position_control_impulse_effort = 0;
+    analogWrite(A_ZERO_FWD_PIN, 0);
+    analogWrite(A_ZERO_BCK_PIN, 0);
+    return;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 1. ACCUMULATIVE SPEED CONTROL
+  // ---------------------------------------------------------------------------
+  // Speed/trajectory calculations remain on their original slower update rate.
+  if (current_millis - speed_millis >= ORM_SPEED_UPDATE_INTERVAL_MS) {
     speed_millis = current_millis;
 
-    if (control_mode == CONTROL_MODE_FORCE_PWM) {
-      target_angle_stable_iterations = 0;
-      if (control_pwm > 0) {
-        analogWrite(A_ZERO_FWD_PIN, control_pwm);
-        analogWrite(A_ZERO_BCK_PIN, 0);
-      } else {
-        analogWrite(A_ZERO_FWD_PIN, 0);
-        analogWrite(A_ZERO_BCK_PIN, -control_pwm);
-      }
-      return;
-    }
-
-    if (motor_power == 0){
-      // If no motor power - just apply the same angle that is currenrly read
-      j_angle_current = j_angle_read;
-      j_angle_desired = j_angle_read;
-      j_speed_current = 0;
-      speed_control_effort = 0;
-      impulse_debt = 0;
-      speed_diff_sign_prev = 0;
-      target_angle_stable_iterations = 0;
-      analogWrite(A_ZERO_FWD_PIN, 0);
-      analogWrite(A_ZERO_BCK_PIN, 0);
-      return;
-    }
-
-    if(j_angle_force){
-      // If the angle is forced - apply it immediately, no acceleration logic
-      j_angle_current = j_angle_desired;
-      j_speed_current = 0;
-      speed_control_effort = 0;
-      impulse_debt = 0;
-      speed_diff_sign_prev = 0;
-      target_angle_stable_iterations = 0;
-      analogWrite(A_ZERO_FWD_PIN, 0);
-      analogWrite(A_ZERO_BCK_PIN, 0);
-      return;
-    }
-
-    long target_angle_diff = (long)j_angle_desired - (long)j_angle_read;
-    bool hold_speed_control_effort = false;
-    if (abs(target_angle_diff) <= ORM_TARGET_ANGLE_TOLERANCE) {
-      if (target_angle_stable_iterations <= ORM_TARGET_ANGLE_STABLE_ITERATIONS) {
-        target_angle_stable_iterations++;
-      }
-      if (target_angle_stable_iterations > ORM_TARGET_ANGLE_STABLE_ITERATIONS) {
-        hold_speed_control_effort = true;
-      }
-    } else {
-      target_angle_stable_iterations = 0;
-    }
-
     long predicted_current_speed = j_speed_read;
-    if(history_records_size>0){
+    if (history_records_size > 0) {
       int oldest_history_ptr = 0;
-      if(history_records_size>=HISTORY_RECORDS_N){
+      if (history_records_size >= HISTORY_RECORDS_N) {
         oldest_history_ptr = history_records_ptr;
       }
 
       long speed_sum = 0;
-      for(int i=0;i<history_records_size;i++){
+      for (int i = 0; i < history_records_size; i++) {
         int history_ptr = (oldest_history_ptr + i) % HISTORY_RECORDS_N;
         speed_sum += j_speed_read_history[history_ptr];
       }
@@ -441,100 +468,137 @@ void ORM::updateActuatorsPosition(){
     long direction = sgn(angle_diff);
     long predicted_desired_speed = 0;
 
-    if(direction!=0){
-      long accelerate_speed = (long)j_speed_current + direction*(long)j_acceleration*(long)ORM_SPEED_PREDICTION_INTERVAL_MS / (long)ORM_MS_IN_SECOND;
+    if (direction != 0) {
+      long accelerate_speed = (long)j_speed_current + direction * (long)j_acceleration * (long)ORM_SPEED_PREDICTION_INTERVAL_MS / (long)ORM_MS_IN_SECOND;
       long abs_angle_diff = angle_diff * direction;
       long sqrt_angle_diff = isqrt(abs_angle_diff);
-      long accel_sqrt = isqrt(2L*(long)j_acceleration);
+      long accel_sqrt = isqrt(2L * (long)j_acceleration);
       long deaccelerate_speed = direction * sqrt_angle_diff * accel_sqrt;
       long max_speed = direction * (long)j_speed_max;
-      long result_speed = min(min(direction*max_speed,direction*accelerate_speed),direction*deaccelerate_speed);
+      long result_speed = min(min(direction * max_speed, direction * accelerate_speed), direction * deaccelerate_speed);
 
-      predicted_desired_speed = direction*result_speed;
+      predicted_desired_speed = direction * result_speed;
     }
 
     j_speed_current = predicted_desired_speed;
 
-    if (!hold_speed_control_effort) {
-      long speed_diff = predicted_desired_speed - predicted_current_speed;
-      int speed_diff_sign = 0;
-      if(speed_diff>ORM_SPEED_DIFF_EPSILON_DEFAULT){
-        speed_diff_sign = 1;
-      } else if(speed_diff<-ORM_SPEED_DIFF_EPSILON_DEFAULT){
-        speed_diff_sign = -1;
-      }
-      int impulse_debt_speed_diff_sign = 0;
-      if(speed_diff>ORM_SPEED_DIFF_IMPULSE_DEPT_EPSILON){
-        impulse_debt_speed_diff_sign = 1;
-      } else if(speed_diff<-ORM_SPEED_DIFF_IMPULSE_DEPT_EPSILON){
-        impulse_debt_speed_diff_sign = -1;
-      }
+    long speed_diff = predicted_desired_speed - predicted_current_speed;
 
-      if(impulse_debt_speed_diff_sign!=0 && speed_diff_sign_prev!=0 && impulse_debt_speed_diff_sign!=speed_diff_sign_prev){
+    // Inside the epsilon the accumulated effort is intentionally left unchanged.
+    if (abs(speed_diff) >= ORM_SPEED_DIFF_EPSILON) {
+      bool reaction_time_elapsed = !speed_effort_has_changed ||
+        current_millis - speed_effort_last_change_time >= ORM_SPEED_DIFF_REACTION_TIME;
 
-        if(abs(angle_diff)<750){
-          speed_control_effort -= impulse_debt * 6 / 10;
+      if (reaction_time_elapsed) {
+        long effort_multiplier = max(1L, abs(speed_diff) / 1000L);
+        int effort_gain = ORM_SPEED_EFFORT_FACTOR * effort_multiplier;
+
+        if (speed_diff > 0) {
+          speed_control_effort += effort_gain;
         } else {
-          speed_control_effort -= impulse_debt * 0 / 10;
+          speed_control_effort -= effort_gain;
         }
-        impulse_debt = 0;
+
+        speed_control_effort = constrain(speed_control_effort, -MAX_PWM, MAX_PWM);
+        speed_effort_last_change_time = current_millis;
+        speed_effort_has_changed = true;
       }
-
-      if(speed_control_effort>MAX_PWM*100){
-        speed_control_effort = MAX_PWM*100;
-      } else if(speed_control_effort<-MAX_PWM*100){
-        speed_control_effort = -MAX_PWM*100;
-      }
-
-      int speed_control_effort_before = speed_control_effort;
-      if(speed_diff_sign>0){
-        if(abs(angle_diff)<750){
-          speed_control_effort += 100*max(1,abs(speed_diff)/1000);//ORM_SPEED_UPDATE_INTERVAL_MS*(isqrt(abs(speed_diff)/10))/100;
-        } else {
-          speed_control_effort += 50*max(1,abs(speed_diff)/1000);
-        }
-        //speed_control_effort += 5;
-      } else if(speed_diff_sign<0){
-        if(abs(angle_diff)<750){
-          speed_control_effort -= 100*max(1,abs(speed_diff)/1000);//ORM_SPEED_UPDATE_INTERVAL_MS*(isqrt(abs(speed_diff)/10))/100;
-        } else {
-          speed_control_effort -= 50*max(1,abs(speed_diff)/1000);
-        }
-      }
-
-      if(speed_control_effort>MAX_PWM*100){
-        speed_control_effort = MAX_PWM*100;
-      } else if(speed_control_effort<-MAX_PWM*100){
-        speed_control_effort = -MAX_PWM*100;
-      }
-      impulse_debt += speed_control_effort - speed_control_effort_before;
-      if(impulse_debt_speed_diff_sign!=0){
-        speed_diff_sign_prev = impulse_debt_speed_diff_sign;
-      }
-    }
-
-    int a_zero_speed_effort = speed_control_effort/100;
-
-    if(a_zero_speed_effort>MAX_PWM){
-      a_zero_speed_effort = MAX_PWM;
-    } else if(a_zero_speed_effort<-MAX_PWM){
-      a_zero_speed_effort = -MAX_PWM;
-    }
-
-    if(a_zero_speed_effort!=0){
-      a_zero_speed_effort = sgn(a_zero_speed_effort)*(min_pwm + (long)abs(a_zero_speed_effort)*(long)(MAX_PWM - min_pwm)/(long)MAX_PWM);
-    }
-
-    if (a_zero_speed_effort > 0) {
-      analogWrite(A_ZERO_FWD_PIN, a_zero_speed_effort);
-      analogWrite(A_ZERO_BCK_PIN, 0);
-    } else {
-      analogWrite(A_ZERO_FWD_PIN, 0);
-      analogWrite(A_ZERO_BCK_PIN, -a_zero_speed_effort);
     }
   }
-}
 
+  // ---------------------------------------------------------------------------
+  // 2. IMPULSE POSITION CONTROL
+  // ---------------------------------------------------------------------------
+  // This section runs every call, rather than only every speed update, because
+  // the minimum impulse is only 5 ms wide.
+  int position_control_effort = 0;
+  long position_angle_diff = (long)j_angle_desired - (long)j_angle_read;
+  long measured_speed = (long)j_speed_read;
+  bool actuator_heading_to_target =
+    sgn(measured_speed) == sgn(position_angle_diff) &&
+    abs(measured_speed) > ORM_SPEED_DIFF_EPSILON / 2;
+  bool position_control_required =
+    abs(position_angle_diff) >= ORM_ANGLE_DIFF_EPSILON &&
+    abs(position_angle_diff) <= ORM_POSITION_CONTROL_ANGLE_DIFF &&
+    !actuator_heading_to_target;
+
+  if (position_control_impulse_running) {
+    // Once an impulse has started, use its cached width and cached direction.
+    // A sign change cannot reverse it, but sufficient motion toward the target
+    // suppresses it immediately.
+    unsigned long impulse_elapsed = current_millis - position_control_period_start;
+
+    if (impulse_elapsed < position_control_impulse_width && position_control_required) {
+      position_control_effort = position_control_impulse_effort;
+    } else {
+      position_control_impulse_running = false;
+      position_control_effort = 0;
+
+      // Deactivate if any position-control requirement stopped being true.
+      if (!position_control_required) {
+        position_control_active = false;
+      }
+    }
+  }
+
+  if (!position_control_impulse_running) {
+    if (position_control_required) {
+      bool start_impulse = false;
+
+      // Entering the position-control range starts an impulse immediately.
+      if (!position_control_active) {
+        position_control_active = true;
+        start_impulse = true;
+      } else if (current_millis - position_control_period_start >= ORM_POSITION_CONTROL_IMPULSE_PERIOD) {
+        start_impulse = true;
+      }
+
+      if (start_impulse) {
+        position_control_period_start = current_millis;
+
+        // For now the estimator is intentionally fixed to the minimum width.
+        // Later this assignment can be replaced with the impulse-width logic.
+        position_control_impulse_width = ORM_POSITION_CONTROL_IMPULSE_TIME_MIN;
+
+        // Cache both magnitude and direction for the whole impulse.
+        position_control_impulse_effort = position_angle_diff > 0
+          ? ORM_POSITION_CONTROL_IMPULSE_MAGNITUDE
+          : -ORM_POSITION_CONTROL_IMPULSE_MAGNITUDE;
+
+        position_control_impulse_running = true;
+        position_control_effort = position_control_impulse_effort;
+      }
+    } else {
+      position_control_active = false;
+      position_control_impulse_width = 0;
+      position_control_impulse_effort = 0;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3. CONSOLIDATED EFFORT
+  // ---------------------------------------------------------------------------
+  speed_control_effort = constrain(speed_control_effort, -MAX_PWM, MAX_PWM);
+
+  int consolidated_effort = speed_control_effort + position_control_effort;
+  consolidated_effort = constrain(consolidated_effort, -MAX_PWM, MAX_PWM);
+
+  // Preserve the existing minimum-PWM compensation on the final consolidated
+  // effort, rather than applying it independently to each controller.
+  int a_zero_effort = consolidated_effort;
+  if (a_zero_effort != 0) {
+    a_zero_effort = sgn(a_zero_effort) *
+      (min_pwm + (long)abs(a_zero_effort) * (long)(MAX_PWM - min_pwm) / (long)MAX_PWM);
+  }
+
+  if (a_zero_effort > 0) {
+    analogWrite(A_ZERO_FWD_PIN, a_zero_effort);
+    analogWrite(A_ZERO_BCK_PIN, 0);
+  } else {
+    analogWrite(A_ZERO_FWD_PIN, 0);
+    analogWrite(A_ZERO_BCK_PIN, -a_zero_effort);
+  }
+}
 
 void ORM::updateSensorsMeasurements(){
   unsigned long current_sensor_millis = millis();
