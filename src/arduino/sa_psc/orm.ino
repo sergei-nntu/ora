@@ -26,7 +26,11 @@ const int MAX_PWM = 255;
 // Accumulative speed control
 const long ORM_SPEED_DIFF_EPSILON = 500;                 // units/second
 const unsigned long ORM_SPEED_DIFF_REACTION_TIME = 25;   // ms
-const int ORM_SPEED_EFFORT_FACTOR = 3;
+const int ORM_SPEED_EFFORT_FACTOR = 1;
+
+// Proportional speed control
+const int ORM_P_SPEED_MAGNITUDE = 10;
+const long ORM_P_SPEED_DIVISOR = 1000;                    // units/second
 
 // Impulse position control
 const long ORM_ANGLE_DIFF_EPSILON = 100;                  // angle units
@@ -381,6 +385,7 @@ void ORM::updateActuatorsPosition(){
   // Speed controller state.
   static unsigned long speed_effort_last_change_time = 0;
   static bool speed_effort_has_changed = false;
+  static long proportional_speed_control_effort = 0;
 
   // Position impulse controller state.
   static bool position_control_active = false;
@@ -391,6 +396,7 @@ void ORM::updateActuatorsPosition(){
 
   if (control_mode == CONTROL_MODE_FORCE_PWM) {
     target_angle_stable_iterations = 0;
+    proportional_speed_control_effort = 0;
     position_control_active = false;
     position_control_impulse_running = false;
 
@@ -411,6 +417,7 @@ void ORM::updateActuatorsPosition(){
     j_speed_current = 0;
     speed_control_effort = 0;
     speed_effort_has_changed = false;
+    proportional_speed_control_effort = 0;
     impulse_debt = 0;
     speed_diff_sign_prev = 0;
     target_angle_stable_iterations = 0;
@@ -429,6 +436,7 @@ void ORM::updateActuatorsPosition(){
     j_speed_current = 0;
     speed_control_effort = 0;
     speed_effort_has_changed = false;
+    proportional_speed_control_effort = 0;
     impulse_debt = 0;
     speed_diff_sign_prev = 0;
     target_angle_stable_iterations = 0;
@@ -490,7 +498,7 @@ void ORM::updateActuatorsPosition(){
         current_millis - speed_effort_last_change_time >= ORM_SPEED_DIFF_REACTION_TIME;
 
       if (reaction_time_elapsed) {
-        long effort_multiplier = max(1L, abs(speed_diff) / 1000L);
+        long effort_multiplier = max(1L, abs(speed_diff) / 3000)*max(1L, abs(speed_diff) / 3000);
         int effort_gain = ORM_SPEED_EFFORT_FACTOR * effort_multiplier;
 
         if (speed_diff > 0) {
@@ -504,10 +512,21 @@ void ORM::updateActuatorsPosition(){
         speed_effort_has_changed = true;
       }
     }
+
+    // -------------------------------------------------------------------------
+    // 2. PROPORTIONAL SPEED CONTROL
+    // -------------------------------------------------------------------------
+    if (speed_diff == 0) {
+      proportional_speed_control_effort = 0;
+    } else {
+      long effort_multiplier = min(10L, abs(speed_diff) / ORM_P_SPEED_DIVISOR);
+      proportional_speed_control_effort =
+        sgn(speed_diff) * (long)ORM_P_SPEED_MAGNITUDE * effort_multiplier;
+    }
   }
 
   // ---------------------------------------------------------------------------
-  // 2. IMPULSE POSITION CONTROL
+  // 3. IMPULSE POSITION CONTROL
   // ---------------------------------------------------------------------------
   // This section runs every call, rather than only every speed update, because
   // the minimum impulse is only 5 ms wide.
@@ -516,10 +535,10 @@ void ORM::updateActuatorsPosition(){
   long measured_speed = (long)j_speed_read;
   bool actuator_heading_to_target =
     sgn(measured_speed) == sgn(position_angle_diff) &&
-    abs(measured_speed) > ORM_SPEED_DIFF_EPSILON / 2;
+    abs(measured_speed) > 0;// ORM_SPEED_DIFF_EPSILON / 2;
   bool position_control_required =
     abs(position_angle_diff) >= ORM_ANGLE_DIFF_EPSILON &&
-    abs(position_angle_diff) <= ORM_POSITION_CONTROL_ANGLE_DIFF &&
+    //abs(position_angle_diff) <= ORM_POSITION_CONTROL_ANGLE_DIFF &&
     !actuator_heading_to_target;
 
   if (position_control_impulse_running) {
@@ -576,16 +595,19 @@ void ORM::updateActuatorsPosition(){
   }
 
   // ---------------------------------------------------------------------------
-  // 3. CONSOLIDATED EFFORT
+  // 4. CONSOLIDATED EFFORT
   // ---------------------------------------------------------------------------
   speed_control_effort = constrain(speed_control_effort, -MAX_PWM, MAX_PWM);
 
-  int consolidated_effort = speed_control_effort + position_control_effort;
-  consolidated_effort = constrain(consolidated_effort, -MAX_PWM, MAX_PWM);
+  long consolidated_effort =
+    (long)speed_control_effort +
+    proportional_speed_control_effort +
+    (long)position_control_effort;
+  consolidated_effort = constrain(consolidated_effort, -(long)MAX_PWM, (long)MAX_PWM);
 
   // Preserve the existing minimum-PWM compensation on the final consolidated
   // effort, rather than applying it independently to each controller.
-  int a_zero_effort = consolidated_effort;
+  int a_zero_effort = (int)consolidated_effort;
   if (a_zero_effort != 0) {
     a_zero_effort = sgn(a_zero_effort) *
       (min_pwm + (long)abs(a_zero_effort) * (long)(MAX_PWM - min_pwm) / (long)MAX_PWM);
