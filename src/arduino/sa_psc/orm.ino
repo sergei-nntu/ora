@@ -26,18 +26,21 @@ const int MAX_PWM = 255;
 // Accumulative speed control
 const long ORM_SPEED_DIFF_EPSILON = 500;                 // units/second
 const unsigned long ORM_SPEED_DIFF_REACTION_TIME = 25;   // ms
-const int ORM_SPEED_EFFORT_FACTOR = 1;
+const int ORM_SPEED_EFFORT_FACTOR = 20;
+const long ORM_SPEED_EFFORT_DIVISOR = 1000;       
 
 // Proportional speed control
-const int ORM_P_SPEED_MAGNITUDE = 10;
-const long ORM_P_SPEED_DIVISOR = 1000;                    // units/second
+const int ORM_P_SPEED_MAGNITUDE = 5; // was 5
+const long ORM_P_SPEED_DIVISOR = 500;                    // units/second
 
 // Impulse position control
 const long ORM_ANGLE_DIFF_EPSILON = 100;                  // angle units
 const long ORM_POSITION_CONTROL_ANGLE_DIFF = 500;        // angle units
 const unsigned long ORM_POSITION_CONTROL_IMPULSE_PERIOD = 100;   // ms
-const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_MIN = 3;   // ms
-const int ORM_POSITION_CONTROL_IMPULSE_MAGNITUDE = 200;
+const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_MIN = 2;   // ms // was 3
+const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_MAX = 20;  // ms
+const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_GAIN = 2;  // ms
+const int ORM_POSITION_CONTROL_IMPULSE_MAGNITUDE = 150;          // was 200
 
 //Servo gripperServo;
 
@@ -392,6 +395,7 @@ void ORM::updateActuatorsPosition(){
   static bool position_control_impulse_running = false;
   static unsigned long position_control_period_start = 0;
   static unsigned long position_control_impulse_width = 0;
+  static unsigned long position_control_impulse_count = 0;
   static int position_control_impulse_effort = 0;
 
   if (control_mode == CONTROL_MODE_FORCE_PWM) {
@@ -399,6 +403,7 @@ void ORM::updateActuatorsPosition(){
     proportional_speed_control_effort = 0;
     position_control_active = false;
     position_control_impulse_running = false;
+    position_control_impulse_count = 0;
 
     if (control_pwm > 0) {
       analogWrite(A_ZERO_FWD_PIN, control_pwm);
@@ -424,6 +429,7 @@ void ORM::updateActuatorsPosition(){
     position_control_active = false;
     position_control_impulse_running = false;
     position_control_impulse_width = 0;
+    position_control_impulse_count = 0;
     position_control_impulse_effort = 0;
     analogWrite(A_ZERO_FWD_PIN, 0);
     analogWrite(A_ZERO_BCK_PIN, 0);
@@ -443,6 +449,7 @@ void ORM::updateActuatorsPosition(){
     position_control_active = false;
     position_control_impulse_running = false;
     position_control_impulse_width = 0;
+    position_control_impulse_count = 0;
     position_control_impulse_effort = 0;
     analogWrite(A_ZERO_FWD_PIN, 0);
     analogWrite(A_ZERO_BCK_PIN, 0);
@@ -498,8 +505,8 @@ void ORM::updateActuatorsPosition(){
         current_millis - speed_effort_last_change_time >= ORM_SPEED_DIFF_REACTION_TIME;
 
       if (reaction_time_elapsed) {
-        long effort_multiplier = max(1L, abs(speed_diff) / 3000)*max(1L, abs(speed_diff) / 3000);
-        int effort_gain = ORM_SPEED_EFFORT_FACTOR * effort_multiplier;
+        long effort_multiplier = max(1L, abs(speed_diff) / ORM_SPEED_EFFORT_DIVISOR);//*max(1L, abs(speed_diff) / ORM_SPEED_EFFORT_DIVISOR);
+        int effort_gain = ORM_SPEED_EFFORT_FACTOR * effort_multiplier / 10;
 
         if (speed_diff > 0) {
           speed_control_effort += effort_gain;
@@ -529,7 +536,7 @@ void ORM::updateActuatorsPosition(){
   // 3. IMPULSE POSITION CONTROL
   // ---------------------------------------------------------------------------
   // This section runs every call, rather than only every speed update, because
-  // the minimum impulse is only 5 ms wide.
+  // the minimum impulse is only a few milliseconds wide.
   int position_control_effort = 0;
   long position_angle_diff = (long)j_angle_desired - (long)j_angle_read;
   long measured_speed = (long)j_speed_read;
@@ -575,9 +582,16 @@ void ORM::updateActuatorsPosition(){
       if (start_impulse) {
         position_control_period_start = current_millis;
 
-        // For now the estimator is intentionally fixed to the minimum width.
-        // Later this assignment can be replaced with the impulse-width logic.
-        position_control_impulse_width = ORM_POSITION_CONTROL_IMPULSE_TIME_MIN;
+        position_control_impulse_width = min(
+          ORM_POSITION_CONTROL_IMPULSE_TIME_MIN +
+            ORM_POSITION_CONTROL_IMPULSE_TIME_GAIN * position_control_impulse_count,
+          ORM_POSITION_CONTROL_IMPULSE_TIME_MAX
+        );
+
+        // Stop advancing the counter after the maximum width is reached.
+        if (position_control_impulse_width < ORM_POSITION_CONTROL_IMPULSE_TIME_MAX) {
+          position_control_impulse_count++;
+        }
 
         // Cache both magnitude and direction for the whole impulse.
         position_control_impulse_effort = position_angle_diff > 0
@@ -590,6 +604,7 @@ void ORM::updateActuatorsPosition(){
     } else {
       position_control_active = false;
       position_control_impulse_width = 0;
+      position_control_impulse_count = 0;
       position_control_impulse_effort = 0;
     }
   }
