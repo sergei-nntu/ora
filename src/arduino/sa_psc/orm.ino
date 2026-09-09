@@ -97,6 +97,17 @@ void ORM::cmdSetAngle(){
   char force = osp_input_buffer[OSP_ORM_ANGLE_FORCE_INDEX];
   j_angle_desired = angle;
   j_angle_force = force;
+  j_angle_coarse = false;
+  target_angle_stable_iterations = 0;
+  control_mode = CONTROL_MODE_PID;
+}
+
+void ORM::cmdSetCoarseAngle(){
+  int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  char force = osp_input_buffer[OSP_ORM_ANGLE_FORCE_INDEX];
+  j_angle_desired = angle;
+  j_angle_force = force;
+  j_angle_coarse = true;
   target_angle_stable_iterations = 0;
   control_mode = CONTROL_MODE_PID;
 }
@@ -256,6 +267,9 @@ void ORM::ospHandleORACommand(){
 
     if (cmd == OSP_ORA_CMD_SET_ANGLE) {
       cmdSetAngle();
+    }
+    if (cmd == OSP_ORA_CMD_SET_COARSE_ANGLE) {
+      cmdSetCoarseAngle();
     }
     if (cmd == OSP_ORA_CMD_SET_CORR_ANGLE) {
       cmdSetCorrAngle();
@@ -544,6 +558,7 @@ void ORM::updateActuatorsPosition(){
     sgn(measured_speed) == sgn(position_angle_diff) &&
     abs(measured_speed) > 0;// ORM_SPEED_DIFF_EPSILON / 2;
   bool position_control_required =
+    !j_angle_coarse &&
     abs(position_angle_diff) >= ORM_ANGLE_DIFF_EPSILON &&
     //abs(position_angle_diff) <= ORM_POSITION_CONTROL_ANGLE_DIFF &&
     !actuator_heading_to_target;

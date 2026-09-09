@@ -93,6 +93,7 @@ class ORM {
     short j_angle_correction =0;
     short j_angle_width =     0;
     char  j_angle_force =     0;
+    bool  j_angle_coarse = false;
     short j_callibr_left = 2;
     short js_angle_scale_factor = 1024; // Scale factor to be applied prior to sending the angle to servos
     short js_small_angle_threshold = 1024; // If the difference between the desired and the current angle does not exceed this value - do not apply the acceleration.
@@ -134,6 +135,7 @@ class ORM {
     void ospHandleGenericCommand();
 
     void cmdSetAngle();
+    void cmdSetCoarseAngle();
     void cmdMakeSteps();
     void cmdSetCorrAngle();
     void cmdSetAngleWidth();

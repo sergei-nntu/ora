@@ -101,6 +101,7 @@ OSP_ORA_CMD_SET_MAX_SPEED = 0x10
 OSP_ORA_CMD_SET_ACCELERATION = 0x11
 OSP_ORA_CMD_SET_MIN_PWM = 0x12
 OSP_ORA_CMD_SET_ADC_SAMPLES_N = 0x13
+OSP_ORA_CMD_SET_COARSE_ANGLE = 0x14
 
 OSP_OQP_DURATION_MSB_INDEX = 5
 OSP_OQP_DURATION_LSB_INDEX = 4
@@ -252,6 +253,16 @@ class OSP:
         cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_ANGLE
         cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
         cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (angle >> 8) &0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_FORCE_INDEX] = force
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_coarse_angle(self, address, angle, force = 0):
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_COARSE_ANGLE
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (angle >> 8) & 0xff
         cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = angle & 0xff
         cmd_bytes[OSP_ORM_ANGLE_FORCE_INDEX] = force
         self.osp_send_command(cmd_bytes)
