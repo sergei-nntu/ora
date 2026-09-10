@@ -31,7 +31,7 @@
 
 
 //#define ADC_SAMPLES_N_MAX  8
-#define ADC_SAMPLES_N_MAX  4
+#define ADC_SAMPLES_N_MAX  8
 
 #define HISTORY_RECORDS_N  2
 
@@ -97,6 +97,9 @@ class ORM {
     short j_callibr_left = 2;
     short js_angle_scale_factor = 1024; // Scale factor to be applied prior to sending the angle to servos
     short js_small_angle_threshold = 1024; // If the difference between the desired and the current angle does not exceed this value - do not apply the acceleration.
+
+    bool effort_lock_candidate_active = false;
+    bool effort_locked = false;
 
     short servo_zero_angle;
     short servo_max_angle;

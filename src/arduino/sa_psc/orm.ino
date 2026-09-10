@@ -33,8 +33,12 @@ const long ORM_SPEED_EFFORT_DIVISOR = 1000;
 const int ORM_P_SPEED_MAGNITUDE = 5; // was 5
 const long ORM_P_SPEED_DIVISOR = 500;                    // units/second
 
+// Effort lock control
+const long ORM_ANGLE_DIFF_EPSILON_OUTER = 100;           // angle units
+const unsigned long ORM_EFFORT_LOCK_TIMEOUT = 300;       // ms
+
 // Impulse position control
-const long ORM_ANGLE_DIFF_EPSILON = 100;                  // angle units
+const long ORM_ANGLE_DIFF_EPSILON = 50;                  // angle units
 const long ORM_POSITION_CONTROL_ANGLE_DIFF = 500;        // angle units
 const unsigned long ORM_POSITION_CONTROL_IMPULSE_PERIOD = 100;   // ms
 const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_MIN = 2;   // ms // was 3
@@ -100,6 +104,8 @@ void ORM::cmdSetAngle(){
   j_angle_coarse = false;
   target_angle_stable_iterations = 0;
   control_mode = CONTROL_MODE_PID;
+  effort_locked = false;
+  effort_lock_candidate_active = false;
 }
 
 void ORM::cmdSetCoarseAngle(){
@@ -110,6 +116,8 @@ void ORM::cmdSetCoarseAngle(){
   j_angle_coarse = true;
   target_angle_stable_iterations = 0;
   control_mode = CONTROL_MODE_PID;
+  effort_locked = false;
+  effort_lock_candidate_active = false;
 }
 
 void ORM::cmdSetCorrAngle(){
@@ -404,6 +412,11 @@ void ORM::updateActuatorsPosition(){
   static bool speed_effort_has_changed = false;
   static long proportional_speed_control_effort = 0;
 
+  // Effort lock state.
+  static unsigned long effort_lock_candidate_start = 0;
+  static short effort_lock_target_angle = 0;
+  static int last_applied_effort = 0;
+
   // Position impulse controller state.
   static bool position_control_active = false;
   static bool position_control_impulse_running = false;
@@ -415,6 +428,9 @@ void ORM::updateActuatorsPosition(){
   if (control_mode == CONTROL_MODE_FORCE_PWM) {
     target_angle_stable_iterations = 0;
     proportional_speed_control_effort = 0;
+    effort_lock_candidate_active = false;
+    effort_locked = false;
+    last_applied_effort = 0;
     position_control_active = false;
     position_control_impulse_running = false;
     position_control_impulse_count = 0;
@@ -437,6 +453,9 @@ void ORM::updateActuatorsPosition(){
     speed_control_effort = 0;
     speed_effort_has_changed = false;
     proportional_speed_control_effort = 0;
+    effort_lock_candidate_active = false;
+    effort_locked = false;
+    last_applied_effort = 0;
     impulse_debt = 0;
     speed_diff_sign_prev = 0;
     target_angle_stable_iterations = 0;
@@ -457,6 +476,9 @@ void ORM::updateActuatorsPosition(){
     speed_control_effort = 0;
     speed_effort_has_changed = false;
     proportional_speed_control_effort = 0;
+    effort_lock_candidate_active = false;
+    effort_locked = false;
+    last_applied_effort = 0;
     impulse_debt = 0;
     speed_diff_sign_prev = 0;
     target_angle_stable_iterations = 0;
@@ -471,7 +493,63 @@ void ORM::updateActuatorsPosition(){
   }
 
   // ---------------------------------------------------------------------------
-  // 1. ACCUMULATIVE SPEED CONTROL
+  // 1. EFFORT LOCK CONTROL
+  // ---------------------------------------------------------------------------
+  long target_angle_diff = (long)j_angle_desired - (long)j_angle_read;
+  long abs_target_angle_diff = abs(target_angle_diff);
+
+  // Time inside the inner tolerance only counts for the current target.
+  if (effort_lock_target_angle != j_angle_desired) {
+    effort_lock_target_angle = j_angle_desired;
+    effort_lock_candidate_active = false;
+  }
+
+  if (effort_locked) {
+    if (abs_target_angle_diff >= ORM_ANGLE_DIFF_EPSILON_OUTER) {
+      effort_locked = false;
+      effort_lock_candidate_active = false;
+    } else {
+      if (last_applied_effort > 0) {
+        analogWrite(A_ZERO_FWD_PIN, last_applied_effort);
+        analogWrite(A_ZERO_BCK_PIN, 0);
+      } else {
+        analogWrite(A_ZERO_FWD_PIN, 0);
+        analogWrite(A_ZERO_BCK_PIN, -last_applied_effort);
+      }
+      return;
+    }
+  }
+
+  if (abs_target_angle_diff <= ORM_ANGLE_DIFF_EPSILON) {
+    if (!effort_lock_candidate_active) {
+      effort_lock_candidate_active = true;
+      effort_lock_candidate_start = current_millis;
+    } else if (current_millis - effort_lock_candidate_start >= ORM_EFFORT_LOCK_TIMEOUT) {
+      effort_locked = true;
+      effort_lock_candidate_active = false;
+
+      // Do not resume a partially completed impulse when the lock is released.
+      position_control_active = false;
+      position_control_impulse_running = false;
+      position_control_impulse_width = 0;
+      position_control_impulse_count = 0;
+      position_control_impulse_effort = 0;
+
+      if (last_applied_effort > 0) {
+        analogWrite(A_ZERO_FWD_PIN, last_applied_effort);
+        analogWrite(A_ZERO_BCK_PIN, 0);
+      } else {
+        analogWrite(A_ZERO_FWD_PIN, 0);
+        analogWrite(A_ZERO_BCK_PIN, -last_applied_effort);
+      }
+      return;
+    }
+  } else {
+    effort_lock_candidate_active = false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2. ACCUMULATIVE SPEED CONTROL
   // ---------------------------------------------------------------------------
   // Speed/trajectory calculations remain on their original slower update rate.
   if (current_millis - speed_millis >= ORM_SPEED_UPDATE_INTERVAL_MS) {
@@ -535,7 +613,7 @@ void ORM::updateActuatorsPosition(){
     }
 
     // -------------------------------------------------------------------------
-    // 2. PROPORTIONAL SPEED CONTROL
+    // 3. PROPORTIONAL SPEED CONTROL
     // -------------------------------------------------------------------------
     if (speed_diff == 0) {
       proportional_speed_control_effort = 0;
@@ -547,12 +625,12 @@ void ORM::updateActuatorsPosition(){
   }
 
   // ---------------------------------------------------------------------------
-  // 3. IMPULSE POSITION CONTROL
+  // 4. IMPULSE POSITION CONTROL
   // ---------------------------------------------------------------------------
   // This section runs every call, rather than only every speed update, because
   // the minimum impulse is only a few milliseconds wide.
   int position_control_effort = 0;
-  long position_angle_diff = (long)j_angle_desired - (long)j_angle_read;
+  long position_angle_diff = target_angle_diff;
   long measured_speed = (long)j_speed_read;
   bool actuator_heading_to_target =
     sgn(measured_speed) == sgn(position_angle_diff) &&
@@ -625,7 +703,7 @@ void ORM::updateActuatorsPosition(){
   }
 
   // ---------------------------------------------------------------------------
-  // 4. CONSOLIDATED EFFORT
+  // 5. CONSOLIDATED EFFORT
   // ---------------------------------------------------------------------------
   speed_control_effort = constrain(speed_control_effort, -MAX_PWM, MAX_PWM);
 
@@ -650,6 +728,7 @@ void ORM::updateActuatorsPosition(){
     analogWrite(A_ZERO_FWD_PIN, 0);
     analogWrite(A_ZERO_BCK_PIN, -a_zero_effort);
   }
+  last_applied_effort = a_zero_effort;
 }
 
 void ORM::updateSensorsMeasurements(){
@@ -913,6 +992,8 @@ void ORM::setup(){
   }
 
   adc_samples_n = ADC_SAMPLES_N_MAX;
+
+  /*
   if (adc_samples_valid) {
     short eeprom_adc_samples = 0;
     EEPROM.get(EEPROM_ADC_SAMPLES_N_OFFSET, eeprom_adc_samples);
@@ -920,7 +1001,7 @@ void ORM::setup(){
       adc_samples_n = eeprom_adc_samples;
     }
   }
-
+  */
   // For now setting the desired angle to the one that was read at the start 
   j_angle_desired = j_angle_read;
 
