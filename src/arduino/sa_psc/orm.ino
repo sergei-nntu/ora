@@ -34,11 +34,11 @@ const int ORM_P_SPEED_MAGNITUDE = 5; // was 5
 const long ORM_P_SPEED_DIVISOR = 500;                    // units/second
 
 // Effort lock control
-const long ORM_ANGLE_DIFF_EPSILON_OUTER = 100;           // angle units
+const long ORM_ANGLE_DIFF_EPSILON_OUTER = 50;           // angle units
 const unsigned long ORM_EFFORT_LOCK_TIMEOUT = 300;       // ms
 
 // Impulse position control
-const long ORM_ANGLE_DIFF_EPSILON = 50;                  // angle units
+const long ORM_ANGLE_DIFF_EPSILON = 25;                  // angle units
 const long ORM_POSITION_CONTROL_ANGLE_DIFF = 500;        // angle units
 const unsigned long ORM_POSITION_CONTROL_IMPULSE_PERIOD = 100;   // ms
 const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_MIN = 2;   // ms // was 3

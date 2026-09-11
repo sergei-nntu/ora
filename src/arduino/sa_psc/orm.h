@@ -31,7 +31,7 @@
 
 
 //#define ADC_SAMPLES_N_MAX  8
-#define ADC_SAMPLES_N_MAX  8
+#define ADC_SAMPLES_N_MAX  16
 
 #define HISTORY_RECORDS_N  2
 
