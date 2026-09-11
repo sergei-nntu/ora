@@ -78,7 +78,8 @@ class ORMR3Control:
         )
         return anticipated_position, anticipated_euler_angles
 
-    def set_pose(self, x, y, z, pitch=None, roll=None, yaw=None):
+    def set_pose(self, x, y, z, pitch=None, roll=None, yaw=None,
+                 command="set_angle"):
         """Move the end effector to an XYZ pose using inverse kinematics.
 
         Position is expressed in metres and orientation in radians. If no
@@ -87,6 +88,8 @@ class ORMR3Control:
         values. Returns the target chain angles, achieved XYZ position, and
         achieved XYZ Euler angles (roll, pitch, yaw).
         """
+        if command not in ("set_angle", "set_coarse_angle"):
+            raise ValueError("command must be set_angle or set_coarse_angle")
         target_position = np.array([x, y, z], dtype=float)
         orientation = (roll, pitch, yaw)
 
@@ -127,7 +130,10 @@ class ORMR3Control:
 
             if self.osp is not None:
                 osp_angle = int(round(float(angle) * osp_scale))
-                self.osp.ora_set_angle(joint_address, osp_angle)
+                if command == "set_coarse_angle":
+                    self.osp.ora_set_coarse_angle(joint_address, osp_angle)
+                else:
+                    self.osp.ora_set_angle(joint_address, osp_angle)
             joint_address += 1
 
         self.joint_angles = target_angles

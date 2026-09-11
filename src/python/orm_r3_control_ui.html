@@ -175,6 +175,8 @@
     const buttons = [...document.querySelectorAll("button[data-axis]")];
     const status = document.querySelector("#status");
     let busy = false;
+    const PRECISE_DELAY_MS = 1000;
+    let preciseTimer = null;
 
     function renderPose() {
       for (const axis of ["x", "y", "z"]) {
@@ -224,9 +226,21 @@
     async function move(axis, delta) {
       if (busy) return;
 
-      const requestedPose = { ...pose, [axis]: pose[axis] + delta };
+      clearTimeout(preciseTimer);
+      const actionTime = performance.now();
+      const requestedPose = {
+        ...pose, [axis]: pose[axis] + delta, pitch: 0, roll: 0, yaw: 0
+      };
+      if (await sendPose(requestedPose, "set_coarse_angle")) {
+        preciseTimer = setTimeout(() => {
+          sendPose(requestedPose, "set_angle");
+        }, Math.max(0, PRECISE_DELAY_MS - (performance.now() - actionTime)));
+      }
+    }
+
+    async function sendPose(requestedPose, command) {
       setBusy(true);
-      showStatus("Moving…");
+      showStatus(command === "set_coarse_angle" ? "Moving…" : "Refining position…");
 
       try {
         const response = await fetch(`${API_URL}/set_pose`, {
@@ -234,15 +248,15 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...requestedPose,
-            pitch: 0,
-            roll: 0,
-            yaw: 0
+            command
           })
         });
         acceptPose(await readResponse(response));
-        showStatus("Command applied");
+        showStatus(command === "set_coarse_angle" ? "Coarse position applied" : "Precise position applied");
+        return true;
       } catch (error) {
         showStatus(`Command failed: ${error.message}`, true);
+        return false;
       } finally {
         setBusy(false);
       }

@@ -68,6 +68,7 @@ class ORMR3ControlRequestHandler(BaseHTTPRequestHandler):
             pitch=data.get("pitch"),
             roll=data.get("roll"),
             yaw=data.get("yaw"),
+            command=data.get("command", "set_angle"),
         )
         response = self._pose_response(position, euler_angles)
         response["target_angles"] = target_angles.tolist()
