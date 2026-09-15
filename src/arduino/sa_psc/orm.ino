@@ -36,6 +36,7 @@ const long ORM_P_SPEED_DIVISOR = 500;                    // units/second
 // Effort lock control
 const long ORM_ANGLE_DIFF_EPSILON_OUTER = 50;           // angle units
 const unsigned long ORM_EFFORT_LOCK_TIMEOUT = 300;       // ms
+const unsigned long ORM_EFFORT_LOCK_FORCE_TIMEOUT = 1000; // ms from first outer-range entry
 
 // Impulse position control
 const long ORM_ANGLE_DIFF_EPSILON = 25;                  // angle units
@@ -105,6 +106,8 @@ void ORM::cmdSetAngle(){
   target_angle_stable_iterations = 0;
   control_mode = CONTROL_MODE_PID;
   effort_locked = false;
+  effort_lock_force_active = false;
+  effort_lock_forced = false;
   effort_lock_candidate_active = false;
 }
 
@@ -117,6 +120,8 @@ void ORM::cmdSetCoarseAngle(){
   target_angle_stable_iterations = 0;
   control_mode = CONTROL_MODE_PID;
   effort_locked = false;
+  effort_lock_force_active = false;
+  effort_lock_forced = false;
   effort_lock_candidate_active = false;
 }
 
@@ -430,6 +435,8 @@ void ORM::updateActuatorsPosition(){
     proportional_speed_control_effort = 0;
     effort_lock_candidate_active = false;
     effort_locked = false;
+    effort_lock_force_active = false;
+    effort_lock_forced = false;
     last_applied_effort = 0;
     position_control_active = false;
     position_control_impulse_running = false;
@@ -455,6 +462,8 @@ void ORM::updateActuatorsPosition(){
     proportional_speed_control_effort = 0;
     effort_lock_candidate_active = false;
     effort_locked = false;
+    effort_lock_force_active = false;
+    effort_lock_forced = false;
     last_applied_effort = 0;
     impulse_debt = 0;
     speed_diff_sign_prev = 0;
@@ -478,6 +487,8 @@ void ORM::updateActuatorsPosition(){
     proportional_speed_control_effort = 0;
     effort_lock_candidate_active = false;
     effort_locked = false;
+    effort_lock_force_active = false;
+    effort_lock_forced = false;
     last_applied_effort = 0;
     impulse_debt = 0;
     speed_diff_sign_prev = 0;
@@ -498,15 +509,20 @@ void ORM::updateActuatorsPosition(){
   long target_angle_diff = (long)j_angle_desired - (long)j_angle_read;
   long abs_target_angle_diff = abs(target_angle_diff);
 
-  // Time inside the inner tolerance only counts for the current target.
+  // Both lock timers only count for the current target.
   if (effort_lock_target_angle != j_angle_desired) {
     effort_lock_target_angle = j_angle_desired;
     effort_lock_candidate_active = false;
+    effort_lock_force_active = false;
+    effort_lock_forced = false;
+    effort_locked = false;
   }
 
   if (effort_locked) {
     if (abs_target_angle_diff >= ORM_ANGLE_DIFF_EPSILON_OUTER) {
       effort_locked = false;
+      effort_lock_force_active = false;
+      effort_lock_forced = false;
       effort_lock_candidate_active = false;
     } else {
       if (last_applied_effort > 0) {
@@ -520,32 +536,49 @@ void ORM::updateActuatorsPosition(){
     }
   }
 
+  // Start once per attempt; excursions outside either tolerance do not
+  // postpone the forced-lock deadline.
+  if (!effort_lock_force_active &&
+      abs_target_angle_diff <= ORM_ANGLE_DIFF_EPSILON) {
+    effort_lock_force_active = true;
+    effort_lock_force_start = current_millis;
+  }
+
   if (abs_target_angle_diff <= ORM_ANGLE_DIFF_EPSILON) {
     if (!effort_lock_candidate_active) {
       effort_lock_candidate_active = true;
       effort_lock_candidate_start = current_millis;
-    } else if (current_millis - effort_lock_candidate_start >= ORM_EFFORT_LOCK_TIMEOUT) {
-      effort_locked = true;
-      effort_lock_candidate_active = false;
-
-      // Do not resume a partially completed impulse when the lock is released.
-      position_control_active = false;
-      position_control_impulse_running = false;
-      position_control_impulse_width = 0;
-      position_control_impulse_count = 0;
-      position_control_impulse_effort = 0;
-
-      if (last_applied_effort > 0) {
-        analogWrite(A_ZERO_FWD_PIN, last_applied_effort);
-        analogWrite(A_ZERO_BCK_PIN, 0);
-      } else {
-        analogWrite(A_ZERO_FWD_PIN, 0);
-        analogWrite(A_ZERO_BCK_PIN, -last_applied_effort);
-      }
-      return;
     }
   } else {
     effort_lock_candidate_active = false;
+  }
+
+  bool normal_lock_due = effort_lock_candidate_active &&
+      current_millis - effort_lock_candidate_start >= ORM_EFFORT_LOCK_TIMEOUT;
+  bool forced_lock_due = effort_lock_force_active &&
+      current_millis - effort_lock_force_start >= ORM_EFFORT_LOCK_FORCE_TIMEOUT;
+
+  if (normal_lock_due || forced_lock_due) {
+    effort_locked = true;
+    effort_lock_forced = forced_lock_due && !normal_lock_due;
+    effort_lock_candidate_active = false;
+    effort_lock_force_active = false;
+
+    // Do not resume a partially completed impulse when the lock is released.
+    position_control_active = false;
+    position_control_impulse_running = false;
+    position_control_impulse_width = 0;
+    position_control_impulse_count = 0;
+    position_control_impulse_effort = 0;
+
+    if (last_applied_effort > 0) {
+      analogWrite(A_ZERO_FWD_PIN, last_applied_effort);
+      analogWrite(A_ZERO_BCK_PIN, 0);
+    } else {
+      analogWrite(A_ZERO_FWD_PIN, 0);
+      analogWrite(A_ZERO_BCK_PIN, -last_applied_effort);
+    }
+    return;
   }
 
   // ---------------------------------------------------------------------------

@@ -100,6 +100,9 @@ class ORM {
 
     bool effort_lock_candidate_active = false;
     bool effort_locked = false;
+    bool effort_lock_force_active = false;
+    bool effort_lock_forced = false;
+    unsigned long effort_lock_force_start = 0;
 
     short servo_zero_angle;
     short servo_max_angle;
