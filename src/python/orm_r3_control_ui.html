@@ -49,7 +49,19 @@
     }
 
     .coordinate span { display: block; color: #8e9bad; font-size: .8rem; }
-    .coordinate output { font: 600 1.15rem ui-monospace, monospace; }
+    .coordinate input {
+      width: 100%;
+      min-width: 0;
+      margin-top: 6px;
+      padding: 6px;
+      border: 1px solid #54647d;
+      border-radius: 6px;
+      background: #1a202b;
+      color: inherit;
+      font: 600 1.15rem ui-monospace, monospace;
+      text-align: center;
+    }
+    #apply { grid-column: 1 / -1; padding: 10px; }
 
     .controls {
       display: flex;
@@ -130,10 +142,11 @@
     <h1>ORM R3 Control</h1>
     <p class="subtitle">Cartesian movement · 10 mm per press · Arrows + Q/A</p>
 
-    <section class="pose" aria-label="Current Cartesian position">
-      <div class="coordinate"><span>X</span><output id="x">—</output></div>
-      <div class="coordinate"><span>Y</span><output id="y">—</output></div>
-      <div class="coordinate"><span>Z</span><output id="z">—</output></div>
+    <section class="pose" aria-label="Cartesian target position">
+      <label class="coordinate"><span>X (mm)</span><input id="x" type="number" step="any" required placeholder="—"></label>
+      <label class="coordinate"><span>Y (mm)</span><input id="y" type="number" step="any" required placeholder="—"></label>
+      <label class="coordinate"><span>Z (mm)</span><input id="z" type="number" step="any" required placeholder="—"></label>
+      <button id="apply" type="button">Apply</button>
     </section>
 
     <section class="controls" aria-label="Manipulator controls">
@@ -174,20 +187,27 @@
     const pose = { x: 0, y: 0, z: 0 };
     const buttons = [...document.querySelectorAll("button[data-axis]")];
     const status = document.querySelector("#status");
+    const applyButton = document.querySelector("#apply");
+    const fields = Object.fromEntries(["x", "y", "z"].map(axis =>
+      [axis, document.querySelector(`#${axis}`)]));
+    const editedAxes = new Set();
     let busy = false;
     const PRECISE_DELAY_MS = 1000;
     let preciseTimer = null;
 
     function renderPose() {
       for (const axis of ["x", "y", "z"]) {
-        document.querySelector(`#${axis}`).textContent =
-          `${(pose[axis] * 1000).toFixed(1)} mm`;
+        if (!editedAxes.has(axis)) {
+          fields[axis].value = (pose[axis] * 1000).toFixed(1);
+        }
       }
     }
 
     function setBusy(value) {
       busy = value;
       buttons.forEach(button => { button.disabled = value; });
+      applyButton.disabled = value;
+      Object.values(fields).forEach(field => { field.disabled = value; });
     }
 
     function showStatus(message, isError = false) {
@@ -226,16 +246,36 @@
     async function move(axis, delta) {
       if (busy) return;
 
+      return position({ ...pose, [axis]: pose[axis] + delta });
+    }
+
+    async function applyPose() {
+      if (busy) return;
+      const target = {};
+      for (const [axis, field] of Object.entries(fields)) {
+        if (!field.reportValidity() || !Number.isFinite(field.valueAsNumber)) {
+          showStatus("Enter a valid number for each coordinate.", true);
+          return;
+        }
+        target[axis] = field.valueAsNumber / 1000;
+      }
+      if (await position(target)) {
+        editedAxes.clear();
+        renderPose();
+      }
+    }
+
+    async function position(target) {
       clearTimeout(preciseTimer);
       const actionTime = performance.now();
-      const requestedPose = {
-        ...pose, [axis]: pose[axis] + delta, pitch: 0, roll: 0, yaw: 0
-      };
+      const requestedPose = { ...target, pitch: 0, roll: 0, yaw: 0 };
       if (await sendPose(requestedPose, "set_coarse_angle")) {
         preciseTimer = setTimeout(() => {
           sendPose(requestedPose, "set_angle");
         }, Math.max(0, PRECISE_DELAY_MS - (performance.now() - actionTime)));
+        return true;
       }
+      return false;
     }
 
     async function sendPose(requestedPose, command) {
@@ -262,6 +302,11 @@
       }
     }
 
+    Object.entries(fields).forEach(([axis, field]) => {
+      field.addEventListener("input", () => { editedAxes.add(axis); });
+    });
+    applyButton.addEventListener("click", applyPose);
+
     buttons.forEach(button => {
       button.addEventListener("click", () => {
         move(button.dataset.axis, Number(button.dataset.delta));
@@ -278,6 +323,7 @@
     };
 
     document.addEventListener("keydown", event => {
+      if (event.target.closest("input, textarea, select, [contenteditable]")) return;
       const control = keyboardControls[event.key.toLowerCase()];
       if (!control) return;
 
