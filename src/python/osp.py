@@ -187,6 +187,7 @@ class OSP:
     
     
     def __init__(self,port_name):
+        self.joint_angle_feedback = [None] * len(self.joint_angle)
         # '/dev/ttyACM1'
         self.osp_serial = serial.Serial(port=port_name, baudrate=115200, timeout=.1)
         #print("Starting Output Thread")
@@ -577,6 +578,7 @@ class OSP:
         if angle & 0x8000 !=0:
             angle = -((~angle & 0xffff) + 1)
         self.joint_angle[actuator_no] = angle
+        self.joint_angle_feedback[actuator_no] = (angle, time.monotonic())
         if self.orm_is_recording:
             timediff = (datetime.datetime.now() - self.orm_record_start_time).total_seconds()
             self.orm_record_buffer.append({'joint':actuator_no,'angle':angle,'timestamp':timediff})

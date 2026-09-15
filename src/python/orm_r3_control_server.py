@@ -10,7 +10,9 @@ class ORMR3ControlRequestHandler(BaseHTTPRequestHandler):
     control = None
 
     def do_GET(self):
-        if urlsplit(self.path).path == "/pose":
+        if urlsplit(self.path).path == "/joint_angles":
+            self._send_json(200, self.control.get_joint_angles())
+        elif urlsplit(self.path).path == "/pose":
             response = self._pose_response(
                 self.control.end_effector_position,
                 self.control.end_effector_euler_angles,

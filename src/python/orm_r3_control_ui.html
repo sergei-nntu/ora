@@ -124,6 +124,12 @@
       font-size: .9rem;
     }
 
+    .joint-angles { width: 100%; margin-top: 24px; border-collapse: collapse; }
+    .joint-angles caption { text-align: left; margin-bottom: 8px; font-weight: 650; }
+    .joint-angles th, .joint-angles td { padding: 8px; text-align: right; border-bottom: 1px solid #344055; }
+    .joint-angles th:first-child { text-align: left; }
+    #joint-status { color: #9facbd; font-size: .8rem; }
+
     #status.error { color: #ff8e8e; }
 
     @media (max-width: 540px) {
@@ -178,6 +184,13 @@
         </button>
       </div>
     </section>
+
+    <table class="joint-angles">
+      <caption>Joint angles (°)</caption>
+      <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th></tr></thead>
+      <tbody id="joint-angles"></tbody>
+    </table>
+    <p id="joint-status">Waiting for joint feedback…</p>
 
     <p id="status">Connecting to control server…</p>
   </main>
@@ -259,7 +272,9 @@
         }
         target[axis] = field.valueAsNumber / 1000;
       }
-      if (await position(target)) {
+      // Apply is an explicit precision retry, even for unchanged coordinates.
+      clearTimeout(preciseTimer);
+      if (await sendPose({ ...target, pitch: 0, roll: 0, yaw: 0 }, "set_angle")) {
         editedAxes.clear();
         renderPose();
       }
@@ -331,7 +346,53 @@
       if (!event.repeat) move(...control);
     });
 
+    function renderJointAngles(data) {
+      const body = document.querySelector("#joint-angles");
+      body.replaceChildren();
+      for (const joint of data.joints) {
+        const row = document.createElement("tr");
+        const label = document.createElement("th");
+        label.scope = "row";
+        label.textContent = `Joint ${joint.address + 1} / ${joint.address}`;
+        row.append(label);
+        for (const key of ["commanded", "actual"]) {
+          const cell = document.createElement("td");
+          cell.textContent = joint[key] === null ? "—" : `${joint[key].toFixed(2)}°`;
+          if (key === "actual" && joint.stale && joint.actual !== null) {
+            cell.textContent += " (stale)";
+          }
+          row.append(cell);
+        }
+        const delta = document.createElement("td");
+        delta.textContent = joint.commanded === null || joint.actual === null
+          ? "—"
+          : `${(joint.commanded - joint.actual).toFixed(2)}°${joint.stale ? " (stale)" : ""}`;
+        row.append(delta);
+        body.append(row);
+      }
+      document.querySelector("#joint-status").textContent =
+        data.joints.some(joint => joint.stale)
+          ? "Some joint feedback is missing or older than 2 seconds."
+          : "Joint feedback live";
+    }
+
+    async function pollJointAngles() {
+      try {
+        const response = await fetch(`${API_URL}/joint_angles`, {
+          cache: "no-store", signal: AbortSignal.timeout(2000)
+        });
+        renderJointAngles(await readResponse(response));
+      } catch (error) {
+        document.querySelector("#joint-angles").replaceChildren();
+        document.querySelector("#joint-status").textContent =
+          `Joint angles unavailable: ${error.message}`;
+      } finally {
+        setTimeout(pollJointAngles, 250);
+      }
+    }
+
     loadPose();
+    pollJointAngles();
   </script>
 </body>
 </html>

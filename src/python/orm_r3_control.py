@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 import numpy as np
 from ikpy.chain import Chain
@@ -14,9 +15,27 @@ class ORMR3Control:
 
         urdf_path = Path(__file__).with_name("orm_r3.urdf")
         self.chain = Chain.from_urdf_file(str(urdf_path),base_elements=["base_link"])
+        self.commanded_joint_angles = [None for link in self.chain.links
+                                       if link.joint_type == "revolute"]
         self.joint_angles = np.zeros(len(self.chain.links))
         print("Point Angles: "+str(self.joint_angles))
         self.calculate_end_effector_pose()
+
+    def get_joint_angles(self):
+        """Return commanded and measured angles in degrees, by OSP address."""
+        now = time.monotonic()
+        scale = 360.0 / self.OSP_ANGLE_UNITS_PER_REVOLUTION
+        feedback = list(self.osp.joint_angle_feedback) if self.osp is not None else []
+        joints = []
+        for address, commanded in enumerate(self.commanded_joint_angles):
+            sample = feedback[address] if address < len(feedback) else None
+            joints.append({
+                "address": address,
+                "commanded": commanded * scale if commanded is not None else None,
+                "actual": sample[0] * scale if sample is not None else None,
+                "stale": sample is None or now - sample[1] > 2.0,
+            })
+        return {"units": "degrees", "joints": joints}
 
     def calculate_end_effector_pose(self):
         """Calculate the tool pose for the current joint angles.
@@ -128,12 +147,13 @@ class ORMR3Control:
             if link.joint_type != "revolute":
                 continue
 
+            osp_angle = int(round(float(angle) * osp_scale))
             if self.osp is not None:
-                osp_angle = int(round(float(angle) * osp_scale))
                 if command == "set_coarse_angle":
                     self.osp.ora_set_coarse_angle(joint_address, osp_angle)
                 else:
                     self.osp.ora_set_angle(joint_address, osp_angle)
+            self.commanded_joint_angles[joint_address] = osp_angle
             joint_address += 1
 
         self.joint_angles = target_angles
