@@ -109,6 +109,7 @@ class ORM {
 
     short j_angle_read_samples[ADC_SAMPLES_N_MAX];
     short adc_samples_n = ADC_SAMPLES_N_MAX;
+    unsigned short position_control_impulse_period = 75; // ms
     short j_angle_samples_ptr = 0;
     short j_angle_samples_count = 0;
     short j_angle_filtered;
@@ -151,6 +152,7 @@ class ORM {
     void cmdSetAcceleration();
     void cmdSetMinPwm();
     void cmdSetAdcSamplesN();
+    void cmdSetPositionControlImpulsePeriod();
 
     void cmdSetPidProportional();
     void cmdSetPidIntegral();

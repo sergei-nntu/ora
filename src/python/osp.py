@@ -102,6 +102,7 @@ OSP_ORA_CMD_SET_ACCELERATION = 0x11
 OSP_ORA_CMD_SET_MIN_PWM = 0x12
 OSP_ORA_CMD_SET_ADC_SAMPLES_N = 0x13
 OSP_ORA_CMD_SET_COARSE_ANGLE = 0x14
+OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_PERIOD = 0x15
 
 OSP_OQP_DURATION_MSB_INDEX = 5
 OSP_OQP_DURATION_LSB_INDEX = 4
@@ -371,6 +372,17 @@ class OSP:
             pwm_value = 255
         cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (pwm_value >> 8) & 0xff
         cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = pwm_value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_position_control_impulse_period(self, address, period_ms):
+        """Set and persist this joint's impulse period, clamped to 1..65535 ms."""
+        period = max(1, min(65535, int(period_ms)))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_PERIOD
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (period >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = period & 0xff
         self.osp_send_command(cmd_bytes)
 
     def ora_set_adc_samples_n(self, address, value):

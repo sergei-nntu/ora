@@ -41,7 +41,7 @@ const unsigned long ORM_EFFORT_LOCK_FORCE_TIMEOUT = 1000; // ms from first outer
 // Impulse position control
 const long ORM_ANGLE_DIFF_EPSILON = 25;                  // angle units
 const long ORM_POSITION_CONTROL_ANGLE_DIFF = 500;        // angle units
-const unsigned long ORM_POSITION_CONTROL_IMPULSE_PERIOD = 100;   // ms
+const unsigned short ORM_POSITION_CONTROL_IMPULSE_PERIOD = 75; // default ms
 const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_MIN = 2;   // ms // was 3
 const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_MAX = 20;  // ms
 const unsigned long ORM_POSITION_CONTROL_IMPULSE_TIME_GAIN = 2;  // ms
@@ -85,6 +85,9 @@ const int EEPROM_PWM_MAGIC_OFFSET = EEPROM_MIN_PWM_OFFSET + sizeof(short);
 const int EEPROM_ADC_SAMPLES_N_OFFSET = EEPROM_PWM_MAGIC_OFFSET + sizeof(unsigned short);
 const unsigned short ADC_SAMPLES_EEPROM_MAGIC = 0xC6C6;
 const int EEPROM_ADC_SAMPLES_MAGIC_OFFSET = EEPROM_ADC_SAMPLES_N_OFFSET + sizeof(short);
+const int EEPROM_IMPULSE_PERIOD_OFFSET = EEPROM_ADC_SAMPLES_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_IMPULSE_PERIOD_MAGIC_OFFSET = EEPROM_IMPULSE_PERIOD_OFFSET + sizeof(unsigned short);
+const unsigned short IMPULSE_PERIOD_EEPROM_MAGIC = 0xC7C7;
 
 const int PID_MODE_SPEED = 1;
 const int PID_MODE_ANGLE = 2;
@@ -186,6 +189,15 @@ void ORM::cmdSetAdcSamplesN(){
     j_angle_samples_count = adc_samples_n;
   }
   saveAdcSamplesToEeprom();
+}
+
+void ORM::cmdSetPositionControlImpulsePeriod(){
+  unsigned short period =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  position_control_impulse_period = period == 0 ? 1 : period;
+  EEPROM.put(EEPROM_IMPULSE_PERIOD_OFFSET, position_control_impulse_period);
+  EEPROM.put(EEPROM_IMPULSE_PERIOD_MAGIC_OFFSET, IMPULSE_PERIOD_EEPROM_MAGIC);
 }
 
 void ORM::cmdSetForcePwm(){
@@ -310,6 +322,9 @@ void ORM::ospHandleORACommand(){
     }
     if (cmd == OSP_ORA_CMD_SET_MIN_PWM){
       cmdSetMinPwm();
+    }
+    if (cmd == OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_PERIOD){
+      cmdSetPositionControlImpulsePeriod();
     }
     if (cmd == OSP_ORA_CMD_SET_ADC_SAMPLES_N){
       cmdSetAdcSamplesN();
@@ -701,7 +716,7 @@ void ORM::updateActuatorsPosition(){
       if (!position_control_active) {
         position_control_active = true;
         start_impulse = true;
-      } else if (current_millis - position_control_period_start >= ORM_POSITION_CONTROL_IMPULSE_PERIOD) {
+      } else if (current_millis - position_control_period_start >= position_control_impulse_period) {
         start_impulse = true;
       }
 
@@ -1021,6 +1036,17 @@ void ORM::setup(){
     EEPROM.get(EEPROM_MIN_PWM_OFFSET, eeprom_min_pwm);
     if (eeprom_min_pwm >= 0 && eeprom_min_pwm <= MAX_PWM) {
       min_pwm = eeprom_min_pwm;
+    }
+  }
+
+  position_control_impulse_period = ORM_POSITION_CONTROL_IMPULSE_PERIOD;
+  unsigned short impulse_period_magic = 0;
+  EEPROM.get(EEPROM_IMPULSE_PERIOD_MAGIC_OFFSET, impulse_period_magic);
+  if (impulse_period_magic == IMPULSE_PERIOD_EEPROM_MAGIC) {
+    unsigned short saved_period = 0;
+    EEPROM.get(EEPROM_IMPULSE_PERIOD_OFFSET, saved_period);
+    if (saved_period > 0) {
+      position_control_impulse_period = saved_period;
     }
   }
 
