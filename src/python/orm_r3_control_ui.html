@@ -187,7 +187,7 @@
 
     <table class="joint-angles">
       <caption>Joint angles (°)</caption>
-      <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th></tr></thead>
+      <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th><th scope="col" title="Mean of the last 20 valid delta readings">Average delta (°)</th></tr></thead>
       <tbody id="joint-angles"></tbody>
     </table>
     <p id="joint-status">Waiting for joint feedback…</p>
@@ -204,6 +204,8 @@
     const fields = Object.fromEntries(["x", "y", "z"].map(axis =>
       [axis, document.querySelector(`#${axis}`)]));
     const editedAxes = new Set();
+    const deltaHistory = new Map();
+    const DELTA_AVERAGE_WINDOW = 10;
     let busy = false;
     const PRECISE_DELAY_MS = 1000;
     let preciseTimer = null;
@@ -368,6 +370,18 @@
           ? "—"
           : `${(joint.commanded - joint.actual).toFixed(2)}°${joint.stale ? " (stale)" : ""}`;
         row.append(delta);
+        const history = deltaHistory.get(joint.address) || [];
+        if (!joint.stale && Number.isFinite(joint.commanded) && Number.isFinite(joint.actual)) {
+          history.push(joint.commanded - joint.actual);
+          if (history.length > DELTA_AVERAGE_WINDOW) history.shift();
+          deltaHistory.set(joint.address, history);
+        }
+        const average = document.createElement("td");
+        average.textContent = history.length
+          ? `${(history.reduce((sum, value) => sum + value, 0) / history.length).toFixed(2)}°${joint.stale ? " (stale)" : ""}`
+          : "—";
+        average.title = `${history.length} / ${DELTA_AVERAGE_WINDOW} valid readings`;
+        row.append(average);
         body.append(row);
       }
       document.querySelector("#joint-status").textContent =
