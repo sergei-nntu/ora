@@ -88,6 +88,12 @@ const int EEPROM_ADC_SAMPLES_MAGIC_OFFSET = EEPROM_ADC_SAMPLES_N_OFFSET + sizeof
 const int EEPROM_IMPULSE_PERIOD_OFFSET = EEPROM_ADC_SAMPLES_MAGIC_OFFSET + sizeof(unsigned short);
 const int EEPROM_IMPULSE_PERIOD_MAGIC_OFFSET = EEPROM_IMPULSE_PERIOD_OFFSET + sizeof(unsigned short);
 const unsigned short IMPULSE_PERIOD_EEPROM_MAGIC = 0xC7C7;
+const int EEPROM_ANGLE_DIFF_EPSILON_OFFSET = EEPROM_IMPULSE_PERIOD_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_ANGLE_DIFF_EPSILON_MAGIC_OFFSET = EEPROM_ANGLE_DIFF_EPSILON_OFFSET + sizeof(unsigned short);
+const unsigned short ANGLE_DIFF_EPSILON_EEPROM_MAGIC = 0xC8C8;
+const int EEPROM_ANGLE_DIFF_EPSILON_OUTER_OFFSET = EEPROM_ANGLE_DIFF_EPSILON_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_ANGLE_DIFF_EPSILON_OUTER_MAGIC_OFFSET = EEPROM_ANGLE_DIFF_EPSILON_OUTER_OFFSET + sizeof(unsigned short);
+const unsigned short ANGLE_DIFF_EPSILON_OUTER_EEPROM_MAGIC = 0xC9C9;
 
 const int PID_MODE_SPEED = 1;
 const int PID_MODE_ANGLE = 2;
@@ -189,6 +195,24 @@ void ORM::cmdSetAdcSamplesN(){
     j_angle_samples_count = adc_samples_n;
   }
   saveAdcSamplesToEeprom();
+}
+
+void ORM::cmdSetAngleDiffEpsilon(){
+  unsigned short value =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  angle_diff_epsilon = value == 0 ? 1 : value;
+  EEPROM.put(EEPROM_ANGLE_DIFF_EPSILON_OFFSET, angle_diff_epsilon);
+  EEPROM.put(EEPROM_ANGLE_DIFF_EPSILON_MAGIC_OFFSET, ANGLE_DIFF_EPSILON_EEPROM_MAGIC);
+}
+
+void ORM::cmdSetAngleDiffEpsilonOuter(){
+  unsigned short value =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  angle_diff_epsilon_outer = value == 0 ? 1 : value;
+  EEPROM.put(EEPROM_ANGLE_DIFF_EPSILON_OUTER_OFFSET, angle_diff_epsilon_outer);
+  EEPROM.put(EEPROM_ANGLE_DIFF_EPSILON_OUTER_MAGIC_OFFSET, ANGLE_DIFF_EPSILON_OUTER_EEPROM_MAGIC);
 }
 
 void ORM::cmdSetPositionControlImpulsePeriod(){
@@ -322,6 +346,12 @@ void ORM::ospHandleORACommand(){
     }
     if (cmd == OSP_ORA_CMD_SET_MIN_PWM){
       cmdSetMinPwm();
+    }
+    if (cmd == OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON){
+      cmdSetAngleDiffEpsilon();
+    }
+    if (cmd == OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON_OUTER){
+      cmdSetAngleDiffEpsilonOuter();
     }
     if (cmd == OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_PERIOD){
       cmdSetPositionControlImpulsePeriod();
@@ -534,7 +564,7 @@ void ORM::updateActuatorsPosition(){
   }
 
   if (effort_locked) {
-    if (abs_target_angle_diff >= ORM_ANGLE_DIFF_EPSILON_OUTER) {
+    if (abs_target_angle_diff >= angle_diff_epsilon_outer) {
       effort_locked = false;
       effort_lock_force_active = false;
       effort_lock_forced = false;
@@ -554,12 +584,12 @@ void ORM::updateActuatorsPosition(){
   // Start once per attempt; excursions outside either tolerance do not
   // postpone the forced-lock deadline.
   if (!effort_lock_force_active &&
-      abs_target_angle_diff <= ORM_ANGLE_DIFF_EPSILON) {
+      abs_target_angle_diff <= angle_diff_epsilon) {
     effort_lock_force_active = true;
     effort_lock_force_start = current_millis;
   }
 
-  if (abs_target_angle_diff <= ORM_ANGLE_DIFF_EPSILON) {
+  if (abs_target_angle_diff <= angle_diff_epsilon) {
     if (!effort_lock_candidate_active) {
       effort_lock_candidate_active = true;
       effort_lock_candidate_start = current_millis;
@@ -685,7 +715,7 @@ void ORM::updateActuatorsPosition(){
     abs(measured_speed) > 0;// ORM_SPEED_DIFF_EPSILON / 2;
   bool position_control_required =
     !j_angle_coarse &&
-    abs(position_angle_diff) >= ORM_ANGLE_DIFF_EPSILON &&
+    abs(position_angle_diff) >= angle_diff_epsilon &&
     //abs(position_angle_diff) <= ORM_POSITION_CONTROL_ANGLE_DIFF &&
     !actuator_heading_to_target;
 
@@ -1036,6 +1066,28 @@ void ORM::setup(){
     EEPROM.get(EEPROM_MIN_PWM_OFFSET, eeprom_min_pwm);
     if (eeprom_min_pwm >= 0 && eeprom_min_pwm <= MAX_PWM) {
       min_pwm = eeprom_min_pwm;
+    }
+  }
+
+  angle_diff_epsilon = ORM_ANGLE_DIFF_EPSILON;
+  unsigned short angle_diff_epsilon_magic = 0;
+  EEPROM.get(EEPROM_ANGLE_DIFF_EPSILON_MAGIC_OFFSET, angle_diff_epsilon_magic);
+  if (angle_diff_epsilon_magic == ANGLE_DIFF_EPSILON_EEPROM_MAGIC) {
+    unsigned short saved_value = 0;
+    EEPROM.get(EEPROM_ANGLE_DIFF_EPSILON_OFFSET, saved_value);
+    if (saved_value > 0) {
+      angle_diff_epsilon = saved_value;
+    }
+  }
+
+  angle_diff_epsilon_outer = ORM_ANGLE_DIFF_EPSILON_OUTER;
+  unsigned short angle_diff_epsilon_outer_magic = 0;
+  EEPROM.get(EEPROM_ANGLE_DIFF_EPSILON_OUTER_MAGIC_OFFSET, angle_diff_epsilon_outer_magic);
+  if (angle_diff_epsilon_outer_magic == ANGLE_DIFF_EPSILON_OUTER_EEPROM_MAGIC) {
+    unsigned short saved_value = 0;
+    EEPROM.get(EEPROM_ANGLE_DIFF_EPSILON_OUTER_OFFSET, saved_value);
+    if (saved_value > 0) {
+      angle_diff_epsilon_outer = saved_value;
     }
   }
 

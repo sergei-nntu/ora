@@ -103,6 +103,8 @@ OSP_ORA_CMD_SET_MIN_PWM = 0x12
 OSP_ORA_CMD_SET_ADC_SAMPLES_N = 0x13
 OSP_ORA_CMD_SET_COARSE_ANGLE = 0x14
 OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_PERIOD = 0x15
+OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON = 0x16
+OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON_OUTER = 0x17
 
 OSP_OQP_DURATION_MSB_INDEX = 5
 OSP_OQP_DURATION_LSB_INDEX = 4
@@ -373,6 +375,28 @@ class OSP:
             pwm_value = 255
         cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (pwm_value >> 8) & 0xff
         cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = pwm_value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_angle_diff_epsilon(self, address, value):
+        """Persist this joint's tolerance in angle units, clamped to 1..65535."""
+        value = max(1, min(65535, int(value)))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_angle_diff_epsilon_outer(self, address, value):
+        """Persist this joint's tolerance in angle units, clamped to 1..65535."""
+        value = max(1, min(65535, int(value)))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON_OUTER
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff
         self.osp_send_command(cmd_bytes)
 
     def ora_set_position_control_impulse_period(self, address, period_ms):
