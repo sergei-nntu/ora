@@ -22,6 +22,20 @@
       padding: 24px;
     }
 
+    .layout { width: min(100%, 1180px); display: grid; grid-template-columns: minmax(360px, 1fr) minmax(0, 620px); gap: 24px; align-items: start; }
+    .positions { padding: 22px; border: 1px solid #344055; border-radius: 20px; background: #1a202b; }
+    .positions header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .positions h2 { margin: 0; font-size: 1.3rem; }
+    #add-position { width: 38px; height: 38px; font-size: 1.5rem; }
+    .positions table { width: 100%; border-collapse: collapse; }
+    .positions th { text-align: left; font-size: .8rem; color: #9facbd; }
+    .positions td { padding: 8px 3px; vertical-align: top; }
+    .positions input { width: 100%; min-width: 0; padding: 7px 4px; background: #111720; color: inherit; border: 1px solid #54647d; border-radius: 6px; font: inherit; }
+    .positions .actions { display: flex; gap: 4px; }
+    .positions .actions button { padding: 7px; font-size: .8rem; }
+    #positions-note { color: #9facbd; font-size: .8rem; }
+    @media (max-width: 1000px) { .layout { max-width: 620px; grid-template-columns: minmax(0, 1fr); } }
+
     main {
       width: min(100%, 620px);
       padding: 28px;
@@ -144,6 +158,16 @@
   </style>
 </head>
 <body>
+  <div class="layout">
+  <aside class="positions" aria-labelledby="positions-heading">
+    <header><h2 id="positions-heading">Positions</h2><button id="add-position" type="button" aria-label="Add position">+</button></header>
+    <table aria-label="Saved positions in millimetres">
+      <thead><tr><th scope="col">X (mm)</th><th scope="col">Y (mm)</th><th scope="col">Z (mm)</th><th scope="col">Actions</th></tr></thead>
+      <tbody id="positions-list"></tbody>
+    </table>
+    <p id="positions-empty">Press + to add a position.</p>
+    <p id="positions-note">Positions are saved in this browser.</p>
+  </aside>
   <main>
     <h1>ORM R3 Control</h1>
     <p class="subtitle">Cartesian movement · 10 mm per press · Arrows + Q/A</p>
@@ -194,6 +218,7 @@
 
     <p id="status">Connecting to control server…</p>
   </main>
+  </div>
 
   <script>
     const API_URL = "http://localhost:7999";
@@ -222,6 +247,7 @@
       busy = value;
       buttons.forEach(button => { button.disabled = value; });
       applyButton.disabled = value;
+      document.querySelectorAll(".position-apply").forEach(button => { button.disabled = value; });
       Object.values(fields).forEach(field => { field.disabled = value; });
     }
 
@@ -347,6 +373,90 @@
       event.preventDefault();
       if (!event.repeat) move(...control);
     });
+
+    const POSITIONS_STORAGE_KEY = "orm-r3-positions";
+    let savedPositions = [];
+    try {
+      const stored = JSON.parse(localStorage.getItem(POSITIONS_STORAGE_KEY) || "[]");
+      if (Array.isArray(stored)) {
+        savedPositions = stored.filter(point => point &&
+          ["x", "y", "z"].every(axis => typeof point[axis] === "string" || Number.isFinite(point[axis])));
+      }
+    } catch (error) {
+      document.querySelector("#positions-note").textContent = "Saved positions unavailable; new positions can still be used.";
+    }
+
+    function savePositions() {
+      try {
+        localStorage.setItem(POSITIONS_STORAGE_KEY, JSON.stringify(savedPositions));
+      } catch (error) {
+        document.querySelector("#positions-note").textContent = "Positions cannot be saved in this browser session.";
+      }
+    }
+
+    function renderPositions() {
+      const list = document.querySelector("#positions-list");
+      list.replaceChildren();
+      document.querySelector("#positions-empty").hidden = savedPositions.length > 0;
+      savedPositions.forEach((point, index) => {
+        const row = document.createElement("tr");
+        const inputs = {};
+        for (const axis of ["x", "y", "z"]) {
+          const cell = document.createElement("td");
+          const input = document.createElement("input");
+          input.type = "number";
+          input.step = "any";
+          input.required = true;
+          input.value = point[axis];
+          input.setAttribute("aria-label", `Position ${index + 1} ${axis.toUpperCase()} in millimetres`);
+          input.addEventListener("input", () => {
+            point[axis] = input.value;
+            savePositions();
+          });
+          inputs[axis] = input;
+          cell.append(input);
+          row.append(cell);
+        }
+        const actions = document.createElement("td");
+        const group = document.createElement("div");
+        group.className = "actions";
+        const apply = document.createElement("button");
+        apply.type = "button";
+        apply.className = "position-apply";
+        apply.textContent = "Apply";
+        apply.disabled = busy;
+        apply.addEventListener("click", async () => {
+          if (busy) return;
+          for (const input of Object.values(inputs)) {
+            if (!input.reportValidity() || !Number.isFinite(input.valueAsNumber)) return;
+          }
+          for (const axis of ["x", "y", "z"]) {
+            fields[axis].value = inputs[axis].value;
+            editedAxes.add(axis);
+          }
+          await applyPose();
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Delete";
+        remove.addEventListener("click", () => {
+          savedPositions.splice(index, 1);
+          savePositions();
+          renderPositions();
+        });
+        group.append(apply, remove);
+        actions.append(group);
+        row.append(actions);
+        list.append(row);
+      });
+    }
+
+    document.querySelector("#add-position").addEventListener("click", () => {
+      savedPositions.push({ x: 0, y: 0, z: 0 });
+      savePositions();
+      renderPositions();
+    });
+    renderPositions();
 
     function renderJointAngles(data) {
       const body = document.querySelector("#joint-angles");
