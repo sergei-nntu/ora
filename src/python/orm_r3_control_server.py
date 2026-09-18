@@ -34,6 +34,9 @@ class ORMR3ControlRequestHandler(BaseHTTPRequestHandler):
 
             if path == "/set_joints_angles":
                 response = self._set_joints_angles(data)
+            elif path == "/set_joint_angle":
+                position, euler_angles = self.control.set_joint_angle(data["address"], data["angle"])
+                response = self._pose_response(position, euler_angles)
             elif path == "/set_pose":
                 response = self._set_pose(data)
             else:

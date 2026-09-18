@@ -211,7 +211,7 @@
 
     <table class="joint-angles">
       <caption>Joint angles (°)</caption>
-      <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th><th scope="col" title="Mean of the last 20 valid delta readings">Average delta (°)</th></tr></thead>
+      <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th><th scope="col" title="Mean of the last 20 valid delta readings">Average delta (°)</th><th scope="col">Action</th></tr></thead>
       <tbody id="joint-angles"></tbody>
     </table>
     <p id="joint-status">Waiting for joint feedback…</p>
@@ -247,6 +247,9 @@
       busy = value;
       buttons.forEach(button => { button.disabled = value; });
       applyButton.disabled = value;
+      document.querySelectorAll(".joint-apply").forEach(button => {
+        button.disabled = value || button.dataset.available !== "true";
+      });
       document.querySelectorAll(".position-apply").forEach(button => { button.disabled = value; });
       Object.values(fields).forEach(field => { field.disabled = value; });
     }
@@ -458,6 +461,26 @@
     });
     renderPositions();
 
+    async function applyJointAngle(joint) {
+      if (busy || !Number.isFinite(joint.commanded)) return;
+      clearTimeout(preciseTimer);
+      setBusy(true);
+      showStatus(`Applying joint ${joint.address + 1}…`);
+      try {
+        const response = await fetch(`${API_URL}/set_joint_angle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: joint.address, angle: joint.commanded * Math.PI / 180 })
+        });
+        acceptPose(await readResponse(response));
+        showStatus(`Joint ${joint.address + 1} precise command applied`);
+      } catch (error) {
+        showStatus(`Joint command failed: ${error.message}`, true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
     function renderJointAngles(data) {
       const body = document.querySelector("#joint-angles");
       body.replaceChildren();
@@ -492,6 +515,17 @@
           : "—";
         average.title = `${history.length} / ${DELTA_AVERAGE_WINDOW} valid readings`;
         row.append(average);
+        const action = document.createElement("td");
+        const apply = document.createElement("button");
+        apply.type = "button";
+        apply.className = "joint-apply";
+        apply.textContent = "Apply";
+        apply.setAttribute("aria-label", `Apply joint ${joint.address + 1} commanded angle`);
+        apply.dataset.available = String(Number.isFinite(joint.commanded));
+        apply.disabled = busy || !Number.isFinite(joint.commanded);
+        apply.addEventListener("click", () => applyJointAngle(joint));
+        action.append(apply);
+        row.append(action);
         body.append(row);
       }
       document.querySelector("#joint-status").textContent =

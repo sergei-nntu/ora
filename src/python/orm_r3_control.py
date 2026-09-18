@@ -1,5 +1,6 @@
 from pathlib import Path
 import time
+import math
 
 import numpy as np
 from ikpy.chain import Chain
@@ -20,6 +21,23 @@ class ORMR3Control:
         self.joint_angles = np.zeros(len(self.chain.links))
         print("Point Angles: "+str(self.joint_angles))
         self.calculate_end_effector_pose()
+
+    def set_joint_angle(self, address, angle):
+        """Send a precise angle in radians to one OSP joint, including retries."""
+        indices = [i for i, link in enumerate(self.chain.links)
+                   if link.joint_type == "revolute"]
+        if type(address) is not int or not 0 <= address < len(indices):
+            raise ValueError("Invalid joint address")
+        if isinstance(angle, bool) or not isinstance(angle, (int, float)) or not math.isfinite(angle):
+            raise ValueError("angle must be a finite number in radians")
+        units = round(angle * self.OSP_ANGLE_UNITS_PER_REVOLUTION / (2 * math.pi))
+        if not -32768 <= units <= 32767:
+            raise ValueError("angle is outside the signed 16-bit OSP range")
+        if self.osp is not None:
+            self.osp.ora_set_angle(address, units)
+        self.commanded_joint_angles[address] = units
+        self.joint_angles[indices[address]] = units * (2 * math.pi) / self.OSP_ANGLE_UNITS_PER_REVOLUTION
+        return self.calculate_end_effector_pose()
 
     def get_joint_angles(self):
         """Return commanded and measured angles in degrees, by OSP address."""
