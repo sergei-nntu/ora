@@ -105,6 +105,11 @@ OSP_ORA_CMD_SET_COARSE_ANGLE = 0x14
 OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_PERIOD = 0x15
 OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON = 0x16
 OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON_OUTER = 0x17
+OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_MIN = 0x18
+OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_MAX = 0x19
+OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_GAIN = 0x1A
+OSP_ORA_CMD_SET_EFFORT_LOCK_TIMEOUT = 0x1B
+OSP_ORA_CMD_SET_EFFORT_LOCK_FORCE_TIMEOUT = 0x1C
 
 OSP_OQP_DURATION_MSB_INDEX = 5
 OSP_OQP_DURATION_LSB_INDEX = 4
@@ -394,6 +399,61 @@ class OSP:
         cmd_bytes = self.command_buffer_pattern.copy()
         cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
         cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON_OUTER
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_position_control_impulse_time_min(self, address, value):
+        """Persist impulse time min in ms, clamped to 1..65535."""
+        value = max(1, min(65535, int(value)))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_MIN
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_position_control_impulse_time_max(self, address, value):
+        """Persist impulse time max in ms, clamped to 1..65535."""
+        value = max(1, min(65535, int(value)))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_MAX
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_position_control_impulse_time_gain(self, address, value):
+        """Persist impulse time gain in ms, clamped to 0..65535."""
+        value = max(0, min(65535, int(value)))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_GAIN
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_effort_lock_timeout(self, address, value):
+        """Persist this joint's effort lock timeout in ms, clamped to 1..65535."""
+        value = max(1, min(65535, int(value)))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_EFFORT_LOCK_TIMEOUT
+        cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
+        cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
+        cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff
+        self.osp_send_command(cmd_bytes)
+
+    def ora_set_effort_lock_force_timeout(self, address, value):
+        """Persist this joint's effort lock force timeout in ms, clamped to 1..65535."""
+        value = max(1, min(65535, int(value)))
+        cmd_bytes = self.command_buffer_pattern.copy()
+        cmd_bytes[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        cmd_bytes[OSP_MSG_CMD_INDEX] = OSP_ORA_CMD_SET_EFFORT_LOCK_FORCE_TIMEOUT
         cmd_bytes[OSP_MSG_ADDRESS_INDEX] = address
         cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
         cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff

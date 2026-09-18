@@ -94,6 +94,21 @@ const unsigned short ANGLE_DIFF_EPSILON_EEPROM_MAGIC = 0xC8C8;
 const int EEPROM_ANGLE_DIFF_EPSILON_OUTER_OFFSET = EEPROM_ANGLE_DIFF_EPSILON_MAGIC_OFFSET + sizeof(unsigned short);
 const int EEPROM_ANGLE_DIFF_EPSILON_OUTER_MAGIC_OFFSET = EEPROM_ANGLE_DIFF_EPSILON_OUTER_OFFSET + sizeof(unsigned short);
 const unsigned short ANGLE_DIFF_EPSILON_OUTER_EEPROM_MAGIC = 0xC9C9;
+const int EEPROM_IMPULSE_TIME_MIN_OFFSET = EEPROM_ANGLE_DIFF_EPSILON_OUTER_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_IMPULSE_TIME_MIN_MAGIC_OFFSET = EEPROM_IMPULSE_TIME_MIN_OFFSET + sizeof(unsigned short);
+const unsigned short IMPULSE_TIME_MIN_EEPROM_MAGIC = 0xCACA;
+const int EEPROM_IMPULSE_TIME_MAX_OFFSET = EEPROM_IMPULSE_TIME_MIN_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_IMPULSE_TIME_MAX_MAGIC_OFFSET = EEPROM_IMPULSE_TIME_MAX_OFFSET + sizeof(unsigned short);
+const unsigned short IMPULSE_TIME_MAX_EEPROM_MAGIC = 0xCBCB;
+const int EEPROM_IMPULSE_TIME_GAIN_OFFSET = EEPROM_IMPULSE_TIME_MAX_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_IMPULSE_TIME_GAIN_MAGIC_OFFSET = EEPROM_IMPULSE_TIME_GAIN_OFFSET + sizeof(unsigned short);
+const unsigned short IMPULSE_TIME_GAIN_EEPROM_MAGIC = 0xCCCC;
+const int EEPROM_EFFORT_LOCK_TIMEOUT_OFFSET = EEPROM_IMPULSE_TIME_GAIN_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_EFFORT_LOCK_TIMEOUT_MAGIC_OFFSET = EEPROM_EFFORT_LOCK_TIMEOUT_OFFSET + sizeof(unsigned short);
+const unsigned short EFFORT_LOCK_TIMEOUT_EEPROM_MAGIC = 0xCDCD;
+const int EEPROM_EFFORT_LOCK_FORCE_TIMEOUT_OFFSET = EEPROM_EFFORT_LOCK_TIMEOUT_MAGIC_OFFSET + sizeof(unsigned short);
+const int EEPROM_EFFORT_LOCK_FORCE_TIMEOUT_MAGIC_OFFSET = EEPROM_EFFORT_LOCK_FORCE_TIMEOUT_OFFSET + sizeof(unsigned short);
+const unsigned short EFFORT_LOCK_FORCE_TIMEOUT_EEPROM_MAGIC = 0xCECE;
 
 const int PID_MODE_SPEED = 1;
 const int PID_MODE_ANGLE = 2;
@@ -213,6 +228,51 @@ void ORM::cmdSetAngleDiffEpsilonOuter(){
   angle_diff_epsilon_outer = value == 0 ? 1 : value;
   EEPROM.put(EEPROM_ANGLE_DIFF_EPSILON_OUTER_OFFSET, angle_diff_epsilon_outer);
   EEPROM.put(EEPROM_ANGLE_DIFF_EPSILON_OUTER_MAGIC_OFFSET, ANGLE_DIFF_EPSILON_OUTER_EEPROM_MAGIC);
+}
+
+void ORM::cmdSetPositionControlImpulseTimeMin(){
+  unsigned short value =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  position_control_impulse_time_min = value == 0 ? 1 : value;
+  EEPROM.put(EEPROM_IMPULSE_TIME_MIN_OFFSET, position_control_impulse_time_min);
+  EEPROM.put(EEPROM_IMPULSE_TIME_MIN_MAGIC_OFFSET, IMPULSE_TIME_MIN_EEPROM_MAGIC);
+}
+
+void ORM::cmdSetPositionControlImpulseTimeMax(){
+  unsigned short value =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  position_control_impulse_time_max = value == 0 ? 1 : value;
+  EEPROM.put(EEPROM_IMPULSE_TIME_MAX_OFFSET, position_control_impulse_time_max);
+  EEPROM.put(EEPROM_IMPULSE_TIME_MAX_MAGIC_OFFSET, IMPULSE_TIME_MAX_EEPROM_MAGIC);
+}
+
+void ORM::cmdSetPositionControlImpulseTimeGain(){
+  unsigned short value =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  position_control_impulse_time_gain = value;
+  EEPROM.put(EEPROM_IMPULSE_TIME_GAIN_OFFSET, position_control_impulse_time_gain);
+  EEPROM.put(EEPROM_IMPULSE_TIME_GAIN_MAGIC_OFFSET, IMPULSE_TIME_GAIN_EEPROM_MAGIC);
+}
+
+void ORM::cmdSetEffortLockTimeout(){
+  unsigned short value =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  effort_lock_timeout = value == 0 ? 1 : value;
+  EEPROM.put(EEPROM_EFFORT_LOCK_TIMEOUT_OFFSET, effort_lock_timeout);
+  EEPROM.put(EEPROM_EFFORT_LOCK_TIMEOUT_MAGIC_OFFSET, EFFORT_LOCK_TIMEOUT_EEPROM_MAGIC);
+}
+
+void ORM::cmdSetEffortLockForceTimeout(){
+  unsigned short value =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  effort_lock_force_timeout = value == 0 ? 1 : value;
+  EEPROM.put(EEPROM_EFFORT_LOCK_FORCE_TIMEOUT_OFFSET, effort_lock_force_timeout);
+  EEPROM.put(EEPROM_EFFORT_LOCK_FORCE_TIMEOUT_MAGIC_OFFSET, EFFORT_LOCK_FORCE_TIMEOUT_EEPROM_MAGIC);
 }
 
 void ORM::cmdSetPositionControlImpulsePeriod(){
@@ -352,6 +412,21 @@ void ORM::ospHandleORACommand(){
     }
     if (cmd == OSP_ORA_CMD_SET_ANGLE_DIFF_EPSILON_OUTER){
       cmdSetAngleDiffEpsilonOuter();
+    }
+    if (cmd == OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_MIN){
+      cmdSetPositionControlImpulseTimeMin();
+    }
+    if (cmd == OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_MAX){
+      cmdSetPositionControlImpulseTimeMax();
+    }
+    if (cmd == OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_GAIN){
+      cmdSetPositionControlImpulseTimeGain();
+    }
+    if (cmd == OSP_ORA_CMD_SET_EFFORT_LOCK_TIMEOUT){
+      cmdSetEffortLockTimeout();
+    }
+    if (cmd == OSP_ORA_CMD_SET_EFFORT_LOCK_FORCE_TIMEOUT){
+      cmdSetEffortLockForceTimeout();
     }
     if (cmd == OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_PERIOD){
       cmdSetPositionControlImpulsePeriod();
@@ -599,9 +674,9 @@ void ORM::updateActuatorsPosition(){
   }
 
   bool normal_lock_due = effort_lock_candidate_active &&
-      current_millis - effort_lock_candidate_start >= ORM_EFFORT_LOCK_TIMEOUT;
+      current_millis - effort_lock_candidate_start >= effort_lock_timeout;
   bool forced_lock_due = effort_lock_force_active &&
-      current_millis - effort_lock_force_start >= ORM_EFFORT_LOCK_FORCE_TIMEOUT;
+      current_millis - effort_lock_force_start >= effort_lock_force_timeout;
 
   if (normal_lock_due || forced_lock_due) {
     effort_locked = true;
@@ -754,13 +829,14 @@ void ORM::updateActuatorsPosition(){
         position_control_period_start = current_millis;
 
         position_control_impulse_width = min(
-          ORM_POSITION_CONTROL_IMPULSE_TIME_MIN +
-            ORM_POSITION_CONTROL_IMPULSE_TIME_GAIN * position_control_impulse_count,
-          ORM_POSITION_CONTROL_IMPULSE_TIME_MAX
+          position_control_impulse_time_min +
+            (unsigned long)position_control_impulse_time_gain * min(position_control_impulse_count, 65535UL),
+          (unsigned long)position_control_impulse_time_max
         );
 
         // Stop advancing the counter after the maximum width is reached.
-        if (position_control_impulse_width < ORM_POSITION_CONTROL_IMPULSE_TIME_MAX) {
+        if (position_control_impulse_width < position_control_impulse_time_max &&
+            position_control_impulse_time_gain > 0 && position_control_impulse_count < 65535UL) {
           position_control_impulse_count++;
         }
 
@@ -1089,6 +1165,51 @@ void ORM::setup(){
     if (saved_value > 0) {
       angle_diff_epsilon_outer = saved_value;
     }
+  }
+
+  position_control_impulse_time_min = ORM_POSITION_CONTROL_IMPULSE_TIME_MIN;
+  unsigned short position_control_impulse_time_min_magic = 0;
+  EEPROM.get(EEPROM_IMPULSE_TIME_MIN_MAGIC_OFFSET, position_control_impulse_time_min_magic);
+  if (position_control_impulse_time_min_magic == IMPULSE_TIME_MIN_EEPROM_MAGIC) {
+    unsigned short saved_value = 0;
+    EEPROM.get(EEPROM_IMPULSE_TIME_MIN_OFFSET, saved_value);
+    if (saved_value > 0) position_control_impulse_time_min = saved_value;
+  }
+
+  position_control_impulse_time_max = ORM_POSITION_CONTROL_IMPULSE_TIME_MAX;
+  unsigned short position_control_impulse_time_max_magic = 0;
+  EEPROM.get(EEPROM_IMPULSE_TIME_MAX_MAGIC_OFFSET, position_control_impulse_time_max_magic);
+  if (position_control_impulse_time_max_magic == IMPULSE_TIME_MAX_EEPROM_MAGIC) {
+    unsigned short saved_value = 0;
+    EEPROM.get(EEPROM_IMPULSE_TIME_MAX_OFFSET, saved_value);
+    if (saved_value > 0) position_control_impulse_time_max = saved_value;
+  }
+
+  position_control_impulse_time_gain = ORM_POSITION_CONTROL_IMPULSE_TIME_GAIN;
+  unsigned short position_control_impulse_time_gain_magic = 0;
+  EEPROM.get(EEPROM_IMPULSE_TIME_GAIN_MAGIC_OFFSET, position_control_impulse_time_gain_magic);
+  if (position_control_impulse_time_gain_magic == IMPULSE_TIME_GAIN_EEPROM_MAGIC) {
+    unsigned short saved_value = 0;
+    EEPROM.get(EEPROM_IMPULSE_TIME_GAIN_OFFSET, saved_value);
+    position_control_impulse_time_gain = saved_value;
+  }
+
+  effort_lock_timeout = ORM_EFFORT_LOCK_TIMEOUT;
+  unsigned short effort_lock_timeout_magic = 0;
+  EEPROM.get(EEPROM_EFFORT_LOCK_TIMEOUT_MAGIC_OFFSET, effort_lock_timeout_magic);
+  if (effort_lock_timeout_magic == EFFORT_LOCK_TIMEOUT_EEPROM_MAGIC) {
+    unsigned short saved_value = 0;
+    EEPROM.get(EEPROM_EFFORT_LOCK_TIMEOUT_OFFSET, saved_value);
+    if (saved_value > 0) effort_lock_timeout = saved_value;
+  }
+
+  effort_lock_force_timeout = ORM_EFFORT_LOCK_FORCE_TIMEOUT;
+  unsigned short effort_lock_force_timeout_magic = 0;
+  EEPROM.get(EEPROM_EFFORT_LOCK_FORCE_TIMEOUT_MAGIC_OFFSET, effort_lock_force_timeout_magic);
+  if (effort_lock_force_timeout_magic == EFFORT_LOCK_FORCE_TIMEOUT_EEPROM_MAGIC) {
+    unsigned short saved_value = 0;
+    EEPROM.get(EEPROM_EFFORT_LOCK_FORCE_TIMEOUT_OFFSET, saved_value);
+    if (saved_value > 0) effort_lock_force_timeout = saved_value;
   }
 
   position_control_impulse_period = ORM_POSITION_CONTROL_IMPULSE_PERIOD;

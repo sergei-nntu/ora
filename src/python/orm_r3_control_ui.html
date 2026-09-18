@@ -22,9 +22,13 @@
       padding: 24px;
     }
 
-    .layout { width: min(100%, 1180px); display: grid; grid-template-columns: minmax(360px, 1fr) minmax(0, 620px); gap: 24px; align-items: start; }
+    .layout { width: min(100%, 1500px); display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 620px) 260px; gap: 24px; align-items: start; }
     .positions { padding: 22px; border: 1px solid #344055; border-radius: 20px; background: #1a202b; }
     .positions header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .timings { padding: 22px; border: 1px solid #344055; border-radius: 20px; background: #1a202b; }
+    .timings h2 { margin: 0 0 16px; }
+    .timings dt { color: #9facbd; margin-top: 18px; }
+    .timings dd { margin: 6px 0; font: 600 1.2rem ui-monospace, monospace; }
     .positions h2 { margin: 0; font-size: 1.3rem; }
     #add-position { width: 38px; height: 38px; font-size: 1.5rem; }
     .positions table { width: 100%; border-collapse: collapse; }
@@ -34,7 +38,7 @@
     .positions .actions { display: flex; gap: 4px; }
     .positions .actions button { padding: 7px; font-size: .8rem; }
     #positions-note { color: #9facbd; font-size: .8rem; }
-    @media (max-width: 1000px) { .layout { max-width: 620px; grid-template-columns: minmax(0, 1fr); } }
+    @media (max-width: 1250px) { .layout { max-width: 620px; grid-template-columns: minmax(0, 1fr); } }
 
     main {
       width: min(100%, 620px);
@@ -214,10 +218,21 @@
       <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th><th scope="col" title="Mean of the last 20 valid delta readings">Average delta (°)</th><th scope="col">Action</th></tr></thead>
       <tbody id="joint-angles"></tbody>
     </table>
+    <label><input id="fine-positioning" type="checkbox"> Fine Positioning</label>
+    <p id="fine-status">Fine positioning off</p>
     <p id="joint-status">Waiting for joint feedback…</p>
 
     <p id="status">Connecting to control server…</p>
   </main>
+  <aside class="timings" aria-labelledby="timing-heading">
+    <h2 id="timing-heading">Positioning times</h2>
+    <dl>
+      <dt>Apply → within 1.5°</dt><dd id="time-coarse">—</dd>
+      <dt>Within 1.5° → fine complete</dt><dd id="time-fine">—</dd>
+      <dt>Apply → fine complete</dt><dd id="time-total">—</dd>
+    </dl>
+    <p id="timing-status">Press Apply to start measuring.</p>
+  </aside>
   </div>
 
   <script>
@@ -290,6 +305,10 @@
     async function move(axis, delta) {
       if (busy) return;
 
+      if (positionTiming?.armed) {
+        positionTiming.armed = false;
+        document.querySelector("#timing-status").textContent = "Measurement cancelled: target changed by movement controls.";
+      }
       return position({ ...pose, [axis]: pose[axis] + delta });
     }
 
@@ -303,11 +322,15 @@
         }
         target[axis] = field.valueAsNumber / 1000;
       }
+      startPositionTiming();
       // Apply is an explicit precision retry, even for unchanged coordinates.
       clearTimeout(preciseTimer);
       if (await sendPose({ ...target, pitch: 0, roll: 0, yaw: 0 }, "set_angle")) {
         editedAxes.clear();
         renderPose();
+        armPositionTiming();
+      } else {
+        failPositionTiming();
       }
     }
 
@@ -461,8 +484,9 @@
     });
     renderPositions();
 
-    async function applyJointAngle(joint) {
+    async function applyJointAngle(joint, automatic = false) {
       if (busy || !Number.isFinite(joint.commanded)) return;
+      if (!automatic) startPositionTiming();
       clearTimeout(preciseTimer);
       setBusy(true);
       showStatus(`Applying joint ${joint.address + 1}…`);
@@ -474,60 +498,209 @@
         });
         acceptPose(await readResponse(response));
         showStatus(`Joint ${joint.address + 1} precise command applied`);
+        if (!automatic) armPositionTiming();
       } catch (error) {
         showStatus(`Joint command failed: ${error.message}`, true);
+        if (!automatic) failPositionTiming();
       } finally {
         setBusy(false);
       }
     }
 
+    let positionTiming = null;
+    let timingRevision = 0;
+
+    function startPositionTiming() {
+      timingRevision++;
+      positionTiming = { start: performance.now(), entered: null, completed: null,
+        fine: document.querySelector("#fine-positioning").checked, armed: false };
+      deltaHistory.clear();
+      for (const id of ["time-coarse", "time-fine", "time-total"]) {
+        document.querySelector(`#${id}`).textContent = "—";
+      }
+      document.querySelector("#timing-status").textContent = "Waiting for command and fresh feedback…";
+    }
+
+    function armPositionTiming() {
+      if (!positionTiming) return;
+      deltaHistory.clear();
+      positionTiming.armed = true;
+    }
+
+    function failPositionTiming() {
+      if (positionTiming) positionTiming.armed = false;
+      document.querySelector("#timing-status").textContent = "Measurement stopped: command failed.";
+    }
+
+    function updatePositionTiming(data) {
+      const t = positionTiming;
+      if (!t?.armed || !data.joints.length) return;
+      if (data.joints.some(joint => joint.stale || !Number.isFinite(joint.commanded) ||
+          !Number.isFinite(joint.actual) || !deltaHistory.get(joint.address)?.length)) return;
+      const errors = data.joints.map(joint => {
+        const history = deltaHistory.get(joint.address);
+        return Math.abs(history.reduce((sum, value) => sum + value, 0) / history.length);
+      });
+      const now = performance.now();
+      const seconds = ms => `${(ms / 1000).toFixed(3)} s`;
+      if (t.entered === null && errors.every(error => error <= 1.5)) {
+        t.entered = now;
+        document.querySelector("#time-coarse").textContent = seconds(now - t.start);
+        document.querySelector("#timing-status").textContent = t.fine
+          ? "Within 1.5°; waiting for fine positioning…" : "Measurement complete (fine positioning off).";
+        if (!t.fine) t.armed = false;
+      }
+      if (t.fine && t.entered !== null && errors.every(error => error <= 0.1)) {
+        t.completed = now;
+        t.armed = false;
+        document.querySelector("#time-fine").textContent = seconds(now - t.entered);
+        document.querySelector("#time-total").textContent = seconds(now - t.start);
+        document.querySelector("#timing-status").textContent = "Fine positioning complete.";
+      }
+    }
+
+    const jointRows = new Map();
+    const finePositioning = document.querySelector("#fine-positioning");
+    const fineStatus = document.querySelector("#fine-status");
+    let fineTimer = null;
+    let fineGeneration = 0;
+    const FINE_STEP_INTERVAL_MS = 500;
+    const FINE_JOINT_RETRY_INTERVAL_MS = 2300;
+    const lastFineCorrection = new Map();
+    let lastFineAddress = -1;
+    let lastFineCorrectionTime = -Infinity;
+    let lastJointUpdate = -Infinity;
+
+    async function finePositioningStep() {
+      if (!finePositioning.checked) return;
+      const generation = fineGeneration;
+      const stepStarted = performance.now();
+      try {
+        if (busy) {
+          fineStatus.textContent = "Fine positioning waiting for current command";
+          return;
+        }
+        const entries = [...jointRows.values()].sort((a, b) => a.joint.address - b.joint.address);
+        if (!entries.length || performance.now() - lastJointUpdate > 1000 || entries.some(entry =>
+          entry.joint.stale || !Number.isFinite(entry.joint.commanded) ||
+          !Number.isFinite(entry.joint.actual) || !deltaHistory.get(entry.joint.address)?.length)) {
+          fineStatus.textContent = "Fine positioning waiting for fresh joint feedback";
+          return;
+        }
+        const errors = entries.map(entry => {
+          const history = deltaHistory.get(entry.joint.address);
+          return { joint: entry.joint, error: Math.abs(history.reduce((sum, value) => sum + value, 0) / history.length) };
+        });
+        if (errors.some(item => item.error > 1.5)) {
+          fineStatus.textContent = "Fine positioning waiting for all average errors to be within 1.5°";
+          return;
+        }
+        const outliers = errors.filter(item => item.error > 0.1);
+        if (!outliers.length) {
+          fineStatus.textContent = "Fine positioning complete: all average errors within 0.1°";
+          return;
+        }
+        const now = performance.now();
+        const eligible = outliers.filter(item =>
+          now - (lastFineCorrection.get(item.joint.address) ?? -Infinity) >= FINE_JOINT_RETRY_INTERVAL_MS);
+        if (now - lastFineCorrectionTime < FINE_STEP_INTERVAL_MS || !eligible.length) {
+          fineStatus.textContent = "Fine positioning waiting for joint retry interval";
+          return;
+        }
+        const next = eligible.find(item => item.joint.address > lastFineAddress) || eligible[0];
+        lastFineCorrection.set(next.joint.address, now);
+        lastFineCorrectionTime = now;
+        lastFineAddress = next.joint.address;
+        fineStatus.textContent = `Fine positioning: retrying joint ${next.joint.address + 1}`;
+        await applyJointAngle(next.joint, true);
+      } finally {
+        if (finePositioning.checked && generation === fineGeneration) {
+          fineTimer = setTimeout(finePositioningStep,
+            Math.max(0, FINE_STEP_INTERVAL_MS - (performance.now() - stepStarted)));
+        }
+      }
+    }
+
+    finePositioning.addEventListener("change", () => {
+      clearTimeout(fineTimer);
+      fineGeneration++;
+      if (!finePositioning.checked && positionTiming?.armed && positionTiming.fine) {
+        positionTiming.fine = false;
+        if (positionTiming.entered !== null) positionTiming.armed = false;
+        document.querySelector("#timing-status").textContent = "Fine timing cancelled; measuring only the 1.5° threshold.";
+      }
+      lastFineAddress = -1;
+      fineStatus.textContent = finePositioning.checked ? "Fine positioning enabled" : "Fine positioning off";
+      if (finePositioning.checked) fineTimer = setTimeout(finePositioningStep, FINE_STEP_INTERVAL_MS);
+    });
+
     function renderJointAngles(data) {
       const body = document.querySelector("#joint-angles");
-      body.replaceChildren();
+      const addresses = new Set(data.joints.map(joint => joint.address));
+      for (const [address, entry] of jointRows) {
+        if (!addresses.has(address)) {
+          entry.row.remove();
+          jointRows.delete(address);
+          deltaHistory.delete(address);
+        }
+      }
       for (const joint of data.joints) {
-        const row = document.createElement("tr");
-        const label = document.createElement("th");
-        label.scope = "row";
-        label.textContent = `Joint ${joint.address + 1} / ${joint.address}`;
-        row.append(label);
+        let entry = jointRows.get(joint.address);
+        if (!entry) {
+          const row = document.createElement("tr");
+          const label = document.createElement("th");
+          label.scope = "row";
+          label.textContent = `Joint ${joint.address + 1} / ${joint.address}`;
+          row.append(label);
+          const cells = {};
+          for (const key of ["commanded", "actual", "delta", "average"]) {
+            cells[key] = document.createElement("td");
+            row.append(cells[key]);
+          }
+          const action = document.createElement("td");
+          const apply = document.createElement("button");
+          apply.type = "button";
+          apply.className = "joint-apply";
+          apply.textContent = "Apply";
+          apply.setAttribute("aria-label", `Apply joint ${joint.address + 1} commanded angle`);
+          entry = { row, cells, apply, joint };
+          // Read the latest target, without replacing the focused/pressed button.
+          apply.addEventListener("click", () => applyJointAngle(entry.joint));
+          action.append(apply);
+          row.append(action);
+          body.append(row);
+          jointRows.set(joint.address, entry);
+        }
+        if (entry.joint.commanded !== joint.commanded) deltaHistory.delete(joint.address);
+        entry.joint = joint;
+        const { cells, apply } = entry;
         for (const key of ["commanded", "actual"]) {
-          const cell = document.createElement("td");
+          const cell = cells[key];
           cell.textContent = joint[key] === null ? "—" : `${joint[key].toFixed(2)}°`;
           if (key === "actual" && joint.stale && joint.actual !== null) {
             cell.textContent += " (stale)";
           }
-          row.append(cell);
         }
-        const delta = document.createElement("td");
+        const delta = cells.delta;
         delta.textContent = joint.commanded === null || joint.actual === null
           ? "—"
           : `${(joint.commanded - joint.actual).toFixed(2)}°${joint.stale ? " (stale)" : ""}`;
-        row.append(delta);
         const history = deltaHistory.get(joint.address) || [];
         if (!joint.stale && Number.isFinite(joint.commanded) && Number.isFinite(joint.actual)) {
           history.push(joint.commanded - joint.actual);
           if (history.length > DELTA_AVERAGE_WINDOW) history.shift();
           deltaHistory.set(joint.address, history);
         }
-        const average = document.createElement("td");
+        const average = cells.average;
         average.textContent = history.length
           ? `${(history.reduce((sum, value) => sum + value, 0) / history.length).toFixed(2)}°${joint.stale ? " (stale)" : ""}`
           : "—";
         average.title = `${history.length} / ${DELTA_AVERAGE_WINDOW} valid readings`;
-        row.append(average);
-        const action = document.createElement("td");
-        const apply = document.createElement("button");
-        apply.type = "button";
-        apply.className = "joint-apply";
-        apply.textContent = "Apply";
-        apply.setAttribute("aria-label", `Apply joint ${joint.address + 1} commanded angle`);
         apply.dataset.available = String(Number.isFinite(joint.commanded));
         apply.disabled = busy || !Number.isFinite(joint.commanded);
-        apply.addEventListener("click", () => applyJointAngle(joint));
-        action.append(apply);
-        row.append(action);
-        body.append(row);
       }
+      lastJointUpdate = performance.now();
+      updatePositionTiming(data);
       document.querySelector("#joint-status").textContent =
         data.joints.some(joint => joint.stale)
           ? "Some joint feedback is missing or older than 2 seconds."
@@ -535,17 +708,23 @@
     }
 
     async function pollJointAngles() {
+      const revision = timingRevision;
       try {
         const response = await fetch(`${API_URL}/joint_angles`, {
           cache: "no-store", signal: AbortSignal.timeout(2000)
         });
-        renderJointAngles(await readResponse(response));
+        const data = await readResponse(response);
+        if (!busy && revision === timingRevision) renderJointAngles(data);
       } catch (error) {
-        document.querySelector("#joint-angles").replaceChildren();
+        lastJointUpdate = -Infinity;
+        for (const entry of jointRows.values()) {
+          entry.apply.dataset.available = "false";
+          entry.apply.disabled = true;
+        }
         document.querySelector("#joint-status").textContent =
           `Joint angles unavailable: ${error.message}`;
       } finally {
-        setTimeout(pollJointAngles, 250);
+        setTimeout(pollJointAngles, 50);
       }
     }
 

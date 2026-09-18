@@ -110,6 +110,11 @@ class ORM {
     short j_angle_read_samples[ADC_SAMPLES_N_MAX];
     short adc_samples_n = ADC_SAMPLES_N_MAX;
     unsigned short position_control_impulse_period = 75; // ms
+    unsigned short position_control_impulse_time_min = 2; // ms; defaults loaded from constants at setup
+    unsigned short position_control_impulse_time_max = 20; // ms; defaults loaded from constants at setup
+    unsigned short effort_lock_timeout = 300; // ms; defaults loaded from constants at setup
+    unsigned short effort_lock_force_timeout = 1000; // ms; defaults loaded from constants at setup
+    unsigned short position_control_impulse_time_gain = 2; // ms; defaults loaded from constants at setup
     unsigned short angle_diff_epsilon = 25; // angle units
     unsigned short angle_diff_epsilon_outer = 50; // angle units
     short j_angle_samples_ptr = 0;
@@ -157,6 +162,11 @@ class ORM {
     void cmdSetPositionControlImpulsePeriod();
     void cmdSetAngleDiffEpsilon();
     void cmdSetAngleDiffEpsilonOuter();
+    void cmdSetPositionControlImpulseTimeMin();
+    void cmdSetPositionControlImpulseTimeMax();
+    void cmdSetPositionControlImpulseTimeGain();
+    void cmdSetEffortLockTimeout();
+    void cmdSetEffortLockForceTimeout();
 
     void cmdSetPidProportional();
     void cmdSetPidIntegral();
