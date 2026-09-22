@@ -787,7 +787,7 @@ void ORM::updateActuatorsPosition(){
   long measured_speed = (long)j_speed_read;
   bool actuator_heading_to_target =
     sgn(measured_speed) == sgn(position_angle_diff) &&
-    abs(measured_speed) > 0;// ORM_SPEED_DIFF_EPSILON / 2;
+    abs(measured_speed) > ORM_SPEED_DIFF_EPSILON / 2;
   bool position_control_required =
     !j_angle_coarse &&
     abs(position_angle_diff) >= angle_diff_epsilon &&

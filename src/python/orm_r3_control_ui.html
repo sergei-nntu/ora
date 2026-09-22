@@ -509,10 +509,11 @@
 
     let positionTiming = null;
     let timingRevision = 0;
+    const FINE_SETTLE_TIME_MS = 1000;
 
     function startPositionTiming() {
       timingRevision++;
-      positionTiming = { start: performance.now(), entered: null, completed: null,
+      positionTiming = { start: performance.now(), entered: null, completed: null, withinToleranceSince: null, lastValidFeedback: null,
         fine: document.querySelector("#fine-positioning").checked, armed: false };
       deltaHistory.clear();
       for (const id of ["time-coarse", "time-fine", "time-total"]) {
@@ -539,14 +540,22 @@
 
     function updatePositionTiming(data) {
       const t = positionTiming;
-      if (!t?.armed || !data.joints.length) return;
-      if (data.joints.some(joint => joint.stale || !Number.isFinite(joint.commanded) ||
-          !Number.isFinite(joint.actual) || !deltaHistory.get(joint.address)?.length)) return;
+      if (!t?.armed) return;
+      if (!data.joints.length || data.joints.some(joint => joint.stale || !Number.isFinite(joint.commanded) ||
+          !Number.isFinite(joint.actual) || !deltaHistory.get(joint.address)?.length)) {
+        t.withinToleranceSince = null;
+        t.lastValidFeedback = null;
+        return;
+      }
       const errors = data.joints.map(joint => {
         const history = deltaHistory.get(joint.address);
         return Math.abs(history.reduce((sum, value) => sum + value, 0) / history.length);
       });
       const now = performance.now();
+      if (t.lastValidFeedback !== null && now - t.lastValidFeedback > 1000) {
+        t.withinToleranceSince = null;
+      }
+      t.lastValidFeedback = now;
       const seconds = ms => `${(ms / 1000).toFixed(3)} s`;
       if (t.entered === null && errors.every(error => error <= 1.5)) {
         t.entered = now;
@@ -556,11 +565,21 @@
         if (!t.fine) t.armed = false;
       }
       if (t.fine && t.entered !== null && errors.every((error, index) => error <= fineTolerance(data.joints[index].address))) {
+        if (t.withinToleranceSince === null) t.withinToleranceSince = now;
+        if (now - t.withinToleranceSince < FINE_SETTLE_TIME_MS) {
+          document.querySelector("#timing-status").textContent = "Within tolerance; confirming stability for 1 second…";
+          return;
+        }
         t.completed = now;
         t.armed = false;
         document.querySelector("#time-fine").textContent = seconds(now - t.entered);
         document.querySelector("#time-total").textContent = seconds(now - t.start);
         document.querySelector("#timing-status").textContent = "Fine positioning complete.";
+      } else {
+        t.withinToleranceSince = null;
+        if (t.fine && t.entered !== null) {
+          document.querySelector("#timing-status").textContent = "Waiting for average errors to settle within tolerance.";
+        }
       }
     }
 
@@ -581,6 +600,12 @@
       const generation = fineGeneration;
       const stepStarted = performance.now();
       try {
+        // A completed attempt stays stopped even if the joint errors drift.
+        // Manual Apply creates a new timing record and permits retries again.
+        if (positionTiming && positionTiming.completed !== null) {
+          fineStatus.textContent = "Fine positioning complete; press Apply to start a new attempt.";
+          return;
+        }
         if (busy) {
           fineStatus.textContent = "Fine positioning waiting for current command";
           return;
@@ -602,7 +627,7 @@
         }
         const outliers = errors.filter(item => item.error > fineTolerance(item.joint.address));
         if (!outliers.length) {
-          fineStatus.textContent = "Fine positioning complete: all average errors within joint tolerances";
+          fineStatus.textContent = "All average errors within joint tolerances; confirming stability";
           return;
         }
         const now = performance.now();
@@ -722,6 +747,10 @@
         if (!busy && revision === timingRevision) renderJointAngles(data);
       } catch (error) {
         lastJointUpdate = -Infinity;
+        if (positionTiming?.armed) {
+          positionTiming.withinToleranceSince = null;
+          positionTiming.lastValidFeedback = null;
+        }
         for (const entry of jointRows.values()) {
           entry.apply.dataset.available = "false";
           entry.apply.disabled = true;
