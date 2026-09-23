@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORM R3 Repeatability</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #11151c;
+      color: #edf2f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .layout { width: min(100%, 1500px); display: grid; grid-template-columns: minmax(440px, 1fr) minmax(0, 880px); gap: 24px; align-items: start; }
+    .left-panels, .right-panels { min-width: 0; display: grid; gap: 24px; }
+    .control-panels { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; align-items: start; }
+    .camera-panel, .joints-panel { min-width: 0; padding: 22px; border: 1px solid #344055; border-radius: 20px; background: #1a202b; }
+    .camera-panel h2, .joints-panel h2 { margin: 0 0 16px; }
+    .camera-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .camera-controls select { flex: 1; min-width: 120px; padding: 8px; background: #111720; color: inherit; border: 1px solid #54647d; border-radius: 6px; }
+    .camera-controls button { padding: 8px 12px; }
+    #camera-video { display: block; width: 100%; max-height: 480px; aspect-ratio: 16 / 9; object-fit: contain; background: #080b10; border-radius: 10px; margin-top: 16px; }
+    #camera-status { color: #9facbd; font-size: .9rem; }
+    .table-scroll { overflow-x: auto; }
+    .joints-panel .joint-angles { margin-top: 0; font-size: .85rem; }
+    @media (max-width: 750px) { .control-panels { grid-template-columns: minmax(0, 1fr); } }
+    .test-panel { padding: 22px; border: 1px solid #344055; border-radius: 20px; background: #1a202b; }
+    .test-panel h2 { margin: 0 0 16px; }
+    .test-panel label { display: grid; gap: 6px; margin-bottom: 12px; }
+    .test-panel input { width: 100%; padding: 8px; border: 1px solid #54647d; border-radius: 6px; background: #111720; color: inherit; font: inherit; }
+    #test-start { padding: 8px 16px; }
+    #test-start:disabled { cursor: not-allowed; }
+    #test-note { color: #9facbd; font-size: .8rem; }
+    .positions input[type="checkbox"] { width: 18px; height: 18px; margin: 8px 4px; }
+    .positions .position-id { min-width: 80px; }
+    .positions input[type="number"] { min-width: 65px; }
+    .positions { padding: 22px; border: 1px solid #344055; border-radius: 20px; background: #1a202b; }
+    .positions header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .timings { padding: 22px; border: 1px solid #344055; border-radius: 20px; background: #1a202b; }
+    .timings h2 { margin: 0 0 16px; }
+    .timings dt { color: #9facbd; margin-top: 18px; }
+    .timings dd { margin: 6px 0; font: 600 1.2rem ui-monospace, monospace; }
+    .positions h2 { margin: 0; font-size: 1.3rem; }
+    #add-position { width: 38px; height: 38px; font-size: 1.5rem; }
+    .positions table { width: 100%; border-collapse: collapse; }
+    .positions th { text-align: left; font-size: .8rem; color: #9facbd; }
+    .positions td { padding: 8px 3px; vertical-align: top; }
+    .positions input { width: 100%; min-width: 0; padding: 7px 4px; background: #111720; color: inherit; border: 1px solid #54647d; border-radius: 6px; font: inherit; }
+    .positions .actions { display: flex; gap: 4px; }
+    .positions .actions button { padding: 7px; font-size: .8rem; }
+    #positions-note { color: #9facbd; font-size: .8rem; }
+    @media (max-width: 1250px) { .layout { max-width: 620px; grid-template-columns: minmax(0, 1fr); } }
+
+    main {
+      width: min(100%, 620px);
+      padding: 28px;
+      border: 1px solid #344055;
+      border-radius: 20px;
+      background: #1a202b;
+      box-shadow: 0 18px 50px #0007;
+    }
+
+    h1 { margin: 0 0 6px; font-size: 1.6rem; }
+    .subtitle { margin: 0 0 24px; color: #9facbd; }
+
+    .pose {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .coordinate {
+      padding: 12px;
+      border-radius: 12px;
+      background: #111720;
+      text-align: center;
+    }
+
+    .coordinate span { display: block; color: #8e9bad; font-size: .8rem; }
+    .coordinate input {
+      width: 100%;
+      min-width: 0;
+      margin-top: 6px;
+      padding: 6px;
+      border: 1px solid #54647d;
+      border-radius: 6px;
+      background: #1a202b;
+      color: inherit;
+      font: 600 1.15rem ui-monospace, monospace;
+      text-align: center;
+    }
+    #apply { grid-column: 1 / -1; padding: 10px; }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 38px;
+    }
+
+    .xy-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 76px);
+      grid-template-rows: repeat(3, 68px);
+      gap: 8px;
+    }
+
+    .forward { grid-column: 2; grid-row: 1; }
+    .left { grid-column: 1; grid-row: 2; }
+    .origin { grid-column: 2; grid-row: 2; }
+    .right { grid-column: 3; grid-row: 2; }
+    .backward { grid-column: 2; grid-row: 3; }
+
+    .z-pad { display: grid; gap: 12px; }
+
+    button, .origin {
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+    }
+
+    button {
+      border: 1px solid #54647d;
+      background: #283447;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 650;
+      transition: transform 80ms, background 80ms;
+    }
+
+    button:hover { background: #35455d; }
+    button:active { transform: scale(.95); }
+    button:disabled { cursor: wait; opacity: .45; }
+    button .icon { font-size: 1.55rem; line-height: 1; }
+    button .label { font-size: .72rem; color: #bdc8d6; }
+
+    .origin {
+      border: 1px dashed #435068;
+      color: #718096;
+      font-size: .75rem;
+    }
+
+    .z-pad button { width: 88px; height: 88px; }
+    .axis-label { color: #8290a3; text-align: center; font-size: .75rem; }
+
+    #status {
+      min-height: 1.4em;
+      margin: 22px 0 0;
+      color: #8dd5a5;
+      text-align: center;
+      font-size: .9rem;
+    }
+
+    .joint-angles { width: 100%; margin-top: 24px; border-collapse: collapse; }
+    .joint-angles caption { text-align: left; margin-bottom: 8px; font-weight: 650; }
+    .joint-angles th, .joint-angles td { padding: 8px; text-align: right; border-bottom: 1px solid #344055; }
+    .joint-angles th:first-child { text-align: left; }
+    #joint-status { color: #9facbd; font-size: .8rem; }
+
+    #status.error { color: #ff8e8e; }
+
+    @media (max-width: 540px) {
+      main { padding: 20px 14px; }
+      .controls { gap: 16px; }
+      .xy-pad {
+        grid-template-columns: repeat(3, 64px);
+        grid-template-rows: repeat(3, 62px);
+      }
+      .z-pad button { width: 68px; height: 82px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+  <div class="left-panels">
+  <section class="test-panel" aria-labelledby="test-heading">
+    <h2 id="test-heading">Test</h2>
+    <label for="test-id">Test ID
+      <input id="test-id" type="text" maxlength="100" placeholder="run-001" required>
+    </label>
+    <label for="test-iterations">Number of iterations
+      <input id="test-iterations" type="number" min="1" step="1" value="1" required>
+    </label>
+    <button id="test-start" type="button" aria-describedby="test-note">Start</button>
+    <p id="test-note">Select positions, start the camera, then press Start. Missing joint feedback is excluded from completion checks and saved as null; at least one joint must report.</p>
+  </section>
+  <aside class="positions" aria-labelledby="positions-heading">
+    <header><h2 id="positions-heading">Positions</h2><button id="add-position" type="button" aria-label="Add position">+</button></header>
+    <div class="table-scroll">
+    <table aria-label="Saved positions in millimetres">
+      <thead><tr><th scope="col">Test</th><th scope="col">ID</th><th scope="col">X (mm)</th><th scope="col">Y (mm)</th><th scope="col">Z (mm)</th><th scope="col">Actions</th></tr></thead>
+      <tbody id="positions-list"></tbody>
+    </table>
+    </div>
+    <p id="positions-empty">Press + to add a position.</p>
+    <p id="positions-note">Positions are saved in this browser.</p>
+  </aside>
+  <section class="joints-panel" aria-labelledby="joints-heading">
+    <h2 id="joints-heading">Joint angles</h2>
+    <div class="table-scroll">
+    <table class="joint-angles">
+      <caption>Joint angles (°)</caption>
+      <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th><th scope="col" title="Mean of the last 20 valid delta readings">Average delta (°)</th><th scope="col">Action</th></tr></thead>
+      <tbody id="joint-angles"></tbody>
+    </table>
+    </div>
+    <p id="joint-status">Waiting for joint feedback…</p>
+  </section>
+  </div>
+  <div class="right-panels">
+  <section class="camera-panel" aria-labelledby="camera-heading">
+    <h2 id="camera-heading">Camera</h2>
+    <div class="camera-controls">
+      <label for="camera-select">Camera</label>
+      <select id="camera-select" aria-label="Input camera"></select>
+      <button id="camera-start" type="button">Start camera</button>
+      <button id="camera-stop" type="button" disabled>Stop</button>
+    </div>
+    <video id="camera-video" autoplay muted playsinline></video>
+    <p id="camera-status">Select a camera and press Start camera. Allow camera access when prompted.</p>
+  </section>
+  <div class="control-panels">
+  <main>
+    <h1>ORM R3 Control</h1>
+    <p class="subtitle">Cartesian movement · 10 mm per press · Arrows + Q/A</p>
+
+    <section class="pose" aria-label="Cartesian target position">
+      <label class="coordinate"><span>X (mm)</span><input id="x" type="number" step="any" required placeholder="—"></label>
+      <label class="coordinate"><span>Y (mm)</span><input id="y" type="number" step="any" required placeholder="—"></label>
+      <label class="coordinate"><span>Z (mm)</span><input id="z" type="number" step="any" required placeholder="—"></label>
+      <button id="apply" type="button">Apply</button>
+    </section>
+
+    <section class="controls" aria-label="Manipulator controls">
+      <div>
+        <div class="xy-pad">
+          <button class="forward" data-axis="x" data-delta="0.01" aria-label="Forward">
+            <span class="icon">↑</span><span class="label">Forward</span>
+          </button>
+          <button class="left" data-axis="y" data-delta="0.01" aria-label="Left">
+            <span class="icon">←</span><span class="label">Left</span>
+          </button>
+          <div class="origin">X / Y</div>
+          <button class="right" data-axis="y" data-delta="-0.01" aria-label="Right">
+            <span class="icon">→</span><span class="label">Right</span>
+          </button>
+          <button class="backward" data-axis="x" data-delta="-0.01" aria-label="Backward">
+            <span class="icon">↓</span><span class="label">Backward</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="z-pad">
+        <button data-axis="z" data-delta="0.01" aria-label="Up">
+          <span class="icon">▲</span><span class="label">Up</span>
+        </button>
+        <div class="axis-label">Z axis</div>
+        <button data-axis="z" data-delta="-0.01" aria-label="Down">
+          <span class="icon">▼</span><span class="label">Down</span>
+        </button>
+      </div>
+    </section>
+
+    <label title="Average error tolerance: joints 1–3 ±0.1°; joints 4–6 ±0.25°"><input id="fine-positioning" type="checkbox"> Fine Positioning</label>
+    <p id="fine-status">Fine positioning off</p>
+
+    <p id="status">Connecting to control server…</p>
+  </main>
+  <aside class="timings" aria-labelledby="timing-heading">
+    <h2 id="timing-heading">Positioning times</h2>
+    <dl>
+      <dt>Apply → within 1.5°</dt><dd id="time-coarse">—</dd>
+      <dt>Within 1.5° → fine complete</dt><dd id="time-fine">—</dd>
+      <dt>Apply → fine complete</dt><dd id="time-total">—</dd>
+    </dl>
+    <p id="timing-status">Press Apply to start measuring.</p>
+  </aside>
+  </div>
+  </div>
+  </div>
+
+  <script>
+    const cameraSelect = document.querySelector("#camera-select");
+    const cameraStart = document.querySelector("#camera-start");
+    const cameraStop = document.querySelector("#camera-stop");
+    const cameraVideo = document.querySelector("#camera-video");
+    const cameraStatus = document.querySelector("#camera-status");
+    let cameraStream = null;
+    let cameraRequest = 0;
+
+    function stopCamera() {
+      cameraRequest++;
+      if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+      cameraStream = null;
+      cameraVideo.srcObject = null;
+      cameraStop.disabled = true;
+      cameraStart.disabled = false;
+      cameraStatus.textContent = "Camera stopped.";
+    }
+
+    async function listCameras() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const selected = cameraStream?.getVideoTracks()[0]?.getSettings().deviceId || cameraSelect.value;
+      cameraSelect.replaceChildren();
+      const cameras = devices.filter(device => device.kind === "videoinput");
+      for (const [index, device] of cameras.entries()) {
+        const option = document.createElement("option");
+        option.value = device.deviceId;
+        option.textContent = device.label || `Camera ${index + 1}`;
+        cameraSelect.append(option);
+      }
+      if (cameras.some(device => device.deviceId === selected)) cameraSelect.value = selected;
+      if (!cameras.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "Default camera (permission required)";
+        cameraSelect.append(option);
+      }
+    }
+
+    async function startCamera() {
+      stopCamera();
+      const request = cameraRequest;
+      cameraStart.disabled = true;
+      cameraStop.disabled = false;
+      cameraStatus.textContent = "Opening camera…";
+      try {
+        const deviceId = cameraSelect.value;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+            width: { min: 1920, ideal: 1920 },
+            height: { min: 1080, ideal: 1080 }
+          }
+        });
+        if (request !== cameraRequest) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        cameraStream = stream;
+        cameraVideo.srcObject = stream;
+        stream.getVideoTracks()[0].addEventListener("ended", () => {
+          if (cameraStream === stream) {
+            stopCamera();
+            cameraStatus.textContent = "Camera disconnected. Select a camera and restart.";
+          }
+        });
+        await cameraVideo.play();
+        if (request !== cameraRequest) return;
+        cameraStatus.textContent = `Live camera preview — ${cameraVideo.videoWidth} × ${cameraVideo.videoHeight} px (saved frames use this resolution)`;
+        await listCameras();
+      } catch (error) {
+        if (request !== cameraRequest) return;
+        stopCamera();
+        cameraStatus.textContent = error.name === "OverconstrainedError"
+          ? "This camera cannot provide at least 1920 × 1080. Select a camera that supports 1080p or higher."
+          : `Camera unavailable: ${error.message}`;
+      } finally {
+        if (request === cameraRequest) cameraStart.disabled = false;
+      }
+    }
+
+    if (navigator.mediaDevices?.getUserMedia) {
+      listCameras().catch(error => { cameraStatus.textContent = `Unable to list cameras: ${error.message}`; });
+      cameraStart.addEventListener("click", startCamera);
+      cameraStop.addEventListener("click", stopCamera);
+      cameraSelect.addEventListener("change", () => {
+        if (cameraStream || cameraStart.disabled) startCamera();
+      });
+      navigator.mediaDevices.addEventListener("devicechange", () => {
+        listCameras().catch(error => { cameraStatus.textContent = `Unable to refresh cameras: ${error.message}`; });
+      });
+      window.addEventListener("pagehide", stopCamera);
+    } else {
+      cameraStart.disabled = true;
+      cameraStatus.textContent = "Camera access requires a supported browser on localhost or HTTPS.";
+    }
+
+    const API_URL = "http://localhost:7999";
+    const pose = { x: 0, y: 0, z: 0 };
+    const buttons = [...document.querySelectorAll("button[data-axis]")];
+    const status = document.querySelector("#status");
+    const applyButton = document.querySelector("#apply");
+    const fields = Object.fromEntries(["x", "y", "z"].map(axis =>
+      [axis, document.querySelector(`#${axis}`)]));
+    const editedAxes = new Set();
+    const deltaHistory = new Map();
+    const DELTA_AVERAGE_WINDOW = 10;
+    let busy = false;
+    let testRunning = false;
+    let testCancelled = false;
+    let testPhase = "idle";
+    let testFailure = null;
+    const PRECISE_DELAY_MS = 1000;
+    let preciseTimer = null;
+
+    function renderPose() {
+      for (const axis of ["x", "y", "z"]) {
+        if (!editedAxes.has(axis)) {
+          fields[axis].value = (pose[axis] * 1000).toFixed(1);
+        }
+      }
+    }
+
+    function setBusy(value) {
+      busy = value;
+      buttons.forEach(button => { button.disabled = value || testRunning; });
+      applyButton.disabled = value || testRunning;
+      document.querySelectorAll(".joint-apply").forEach(button => {
+        button.disabled = value || testRunning || button.dataset.available !== "true";
+      });
+      document.querySelectorAll(".position-apply").forEach(button => { button.disabled = value || testRunning; });
+      Object.values(fields).forEach(field => { field.disabled = value || testRunning; });
+    }
+
+    function showStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.toggle("error", isError);
+    }
+
+    async function readResponse(response) {
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return data;
+    }
+
+    function acceptPose(data) {
+      pose.x = data.position.x;
+      pose.y = data.position.y;
+      pose.z = data.position.z;
+      renderPose();
+    }
+
+    async function loadPose() {
+      setBusy(true);
+      try {
+        const response = await fetch(`${API_URL}/pose`);
+        acceptPose(await readResponse(response));
+        showStatus("Ready");
+      } catch (error) {
+        showStatus(`Connection failed: ${error.message}`, true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function move(axis, delta) {
+      if (busy || testRunning) return;
+
+      if (positionTiming?.armed) {
+        positionTiming.armed = false;
+        document.querySelector("#timing-status").textContent = "Measurement cancelled: target changed by movement controls.";
+      }
+      return position({ ...pose, [axis]: pose[axis] + delta });
+    }
+
+    async function applyPose() {
+      if (busy || testRunning) return;
+      const target = {};
+      for (const [axis, field] of Object.entries(fields)) {
+        if (!field.reportValidity() || !Number.isFinite(field.valueAsNumber)) {
+          showStatus("Enter a valid number for each coordinate.", true);
+          return;
+        }
+        target[axis] = field.valueAsNumber / 1000;
+      }
+      startPositionTiming();
+      // Apply is an explicit precision retry, even for unchanged coordinates.
+      clearTimeout(preciseTimer);
+      if (await sendPose({ ...target, pitch: 0, roll: 0, yaw: 0 }, "set_angle")) {
+        editedAxes.clear();
+        renderPose();
+        armPositionTiming();
+      } else {
+        failPositionTiming();
+      }
+    }
+
+    async function position(target) {
+      clearTimeout(preciseTimer);
+      const actionTime = performance.now();
+      const requestedPose = { ...target, pitch: 0, roll: 0, yaw: 0 };
+      if (await sendPose(requestedPose, "set_coarse_angle")) {
+        preciseTimer = setTimeout(() => {
+          sendPose(requestedPose, "set_angle");
+        }, Math.max(0, PRECISE_DELAY_MS - (performance.now() - actionTime)));
+        return true;
+      }
+      return false;
+    }
+
+    async function sendPose(requestedPose, command) {
+      setBusy(true);
+      showStatus(command === "set_coarse_angle" ? "Moving…" : "Refining position…");
+
+      try {
+        const response = await fetch(`${API_URL}/set_pose`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...requestedPose,
+            command
+          })
+        });
+        acceptPose(await readResponse(response));
+        showStatus(command === "set_coarse_angle" ? "Coarse position applied" : "Precise position applied");
+        return true;
+      } catch (error) {
+        showStatus(`Command failed: ${error.message}`, true);
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    Object.entries(fields).forEach(([axis, field]) => {
+      field.addEventListener("input", () => { editedAxes.add(axis); });
+    });
+    applyButton.addEventListener("click", applyPose);
+
+    buttons.forEach(button => {
+      button.addEventListener("click", () => {
+        move(button.dataset.axis, Number(button.dataset.delta));
+      });
+    });
+
+    const keyboardControls = {
+      arrowup: ["x", 0.01],
+      arrowdown: ["x", -0.01],
+      arrowleft: ["y", 0.01],
+      arrowright: ["y", -0.01],
+      q: ["z", 0.01],
+      a: ["z", -0.01]
+    };
+
+    document.addEventListener("keydown", event => {
+      if (event.target.closest("input, textarea, select, [contenteditable]")) return;
+      const control = keyboardControls[event.key.toLowerCase()];
+      if (!control) return;
+
+      event.preventDefault();
+      if (!event.repeat) move(...control);
+    });
+
+    const POSITIONS_STORAGE_KEY = "orm-r3-positions";
+    let savedPositions = [];
+    try {
+      const stored = JSON.parse(localStorage.getItem(POSITIONS_STORAGE_KEY) || "[]");
+      if (Array.isArray(stored)) {
+        savedPositions = stored.filter(point => point &&
+          ["x", "y", "z"].every(axis => typeof point[axis] === "string" || Number.isFinite(point[axis]))).map(point => ({
+            ...point, id: typeof point.id === "string" ? point.id : "", test: point.test === true
+          }));
+      }
+    } catch (error) {
+      document.querySelector("#positions-note").textContent = "Saved positions unavailable; new positions can still be used.";
+    }
+
+    function savePositions() {
+      try {
+        localStorage.setItem(POSITIONS_STORAGE_KEY, JSON.stringify(savedPositions));
+      } catch (error) {
+        document.querySelector("#positions-note").textContent = "Positions cannot be saved in this browser session.";
+      }
+    }
+
+    function renderPositions() {
+      const list = document.querySelector("#positions-list");
+      list.replaceChildren();
+      document.querySelector("#positions-empty").hidden = savedPositions.length > 0;
+      savedPositions.forEach((point, index) => {
+        const row = document.createElement("tr");
+        const testCell = document.createElement("td");
+        const selected = document.createElement("input");
+        selected.type = "checkbox";
+        selected.checked = point.test === true;
+        selected.setAttribute("aria-label", `Include position ${index + 1} in test`);
+        selected.addEventListener("change", () => {
+          point.test = selected.checked;
+          savePositions();
+        });
+        testCell.append(selected);
+        row.append(testCell);
+        const idCell = document.createElement("td");
+        const id = document.createElement("input");
+        id.type = "text";
+        id.className = "position-id";
+        id.value = point.id || "";
+        id.placeholder = "Position ID";
+        id.setAttribute("aria-label", `Position ${index + 1} ID`);
+        id.addEventListener("input", () => {
+          point.id = id.value;
+          savePositions();
+        });
+        idCell.append(id);
+        row.append(idCell);
+        const inputs = {};
+        for (const axis of ["x", "y", "z"]) {
+          const cell = document.createElement("td");
+          const input = document.createElement("input");
+          input.type = "number";
+          input.step = "any";
+          input.required = true;
+          input.value = point[axis];
+          input.setAttribute("aria-label", `Position ${index + 1} ${axis.toUpperCase()} in millimetres`);
+          input.addEventListener("input", () => {
+            point[axis] = input.value;
+            savePositions();
+          });
+          inputs[axis] = input;
+          cell.append(input);
+          row.append(cell);
+        }
+        const actions = document.createElement("td");
+        const group = document.createElement("div");
+        group.className = "actions";
+        const apply = document.createElement("button");
+        apply.type = "button";
+        apply.className = "position-apply";
+        apply.textContent = "Apply";
+        apply.disabled = busy || testRunning;
+        apply.addEventListener("click", async () => {
+          if (busy || testRunning) return;
+          for (const input of Object.values(inputs)) {
+            if (!input.reportValidity() || !Number.isFinite(input.valueAsNumber)) return;
+          }
+          for (const axis of ["x", "y", "z"]) {
+            fields[axis].value = inputs[axis].value;
+            editedAxes.add(axis);
+          }
+          await applyPose();
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Delete";
+        remove.addEventListener("click", () => {
+          savedPositions.splice(index, 1);
+          savePositions();
+          renderPositions();
+        });
+        group.append(apply, remove);
+        actions.append(group);
+        row.append(actions);
+        list.append(row);
+      });
+    }
+
+    document.querySelector("#add-position").addEventListener("click", () => {
+      savedPositions.push({ id: "", test: false, x: 0, y: 0, z: 0 });
+      savePositions();
+      renderPositions();
+    });
+    renderPositions();
+
+    async function applyJointAngle(joint, automatic = false) {
+      if (busy || (testRunning && !automatic) || !Number.isFinite(joint.commanded)) return;
+      if (!automatic) startPositionTiming();
+      clearTimeout(preciseTimer);
+      setBusy(true);
+      showStatus(`Applying joint ${joint.address + 1}…`);
+      try {
+        const response = await fetch(`${API_URL}/set_joint_angle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: joint.address, angle: joint.commanded * Math.PI / 180 })
+        });
+        acceptPose(await readResponse(response));
+        showStatus(`Joint ${joint.address + 1} precise command applied`);
+        if (!automatic) armPositionTiming();
+      } catch (error) {
+        showStatus(`Joint command failed: ${error.message}`, true);
+        if (!automatic) failPositionTiming();
+        if (testRunning) testFailure = error;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    let positionTiming = null;
+    let timingRevision = 0;
+    const FINE_SETTLE_TIME_MS = 1000;
+
+    function startPositionTiming() {
+      if (!testRunning && finePositioning.checked) {
+        clearTimeout(fineTimer);
+        fineGeneration++;
+        fineTimer = setTimeout(finePositioningStep, FINE_STEP_INTERVAL_MS);
+      }
+      timingRevision++;
+      positionTiming = { start: performance.now(), entered: null, completed: null, withinToleranceSince: null, lastValidFeedback: null,
+        fine: document.querySelector("#fine-positioning").checked, armed: false };
+      deltaHistory.clear();
+      for (const id of ["time-coarse", "time-fine", "time-total"]) {
+        document.querySelector(`#${id}`).textContent = "—";
+      }
+      document.querySelector("#timing-status").textContent = "Waiting for command and fresh feedback…";
+    }
+
+    function armPositionTiming() {
+      if (!positionTiming) return;
+      deltaHistory.clear();
+      positionTiming.armed = true;
+    }
+
+    function failPositionTiming() {
+      if (positionTiming) positionTiming.armed = false;
+      document.querySelector("#timing-status").textContent = "Measurement stopped: command failed.";
+    }
+
+    function fineTolerance(address) {
+      // Joint labels 4–6 correspond to zero-based OSP addresses 3–5.
+      return address >= 3 && address <= 5 ? 0.25 : 0.1;
+    }
+
+    function hasJointFeedback(joint) {
+      return !joint.stale && Number.isFinite(joint.commanded) &&
+        Number.isFinite(joint.actual) && !!deltaHistory.get(joint.address)?.length;
+    }
+
+    function updatePositionTiming(data) {
+      const t = positionTiming;
+      if (!t?.armed) return;
+      const measured = testRunning ? data.joints.filter(hasJointFeedback) : data.joints;
+      if (!measured.length || measured.some(joint => !hasJointFeedback(joint))) {
+        t.withinToleranceSince = null;
+        t.lastValidFeedback = null;
+        return;
+      }
+      const errors = measured.map(joint => {
+        const history = deltaHistory.get(joint.address);
+        return Math.abs(history.reduce((sum, value) => sum + value, 0) / history.length);
+      });
+      const now = performance.now();
+      if (t.lastValidFeedback !== null && now - t.lastValidFeedback > 1000) {
+        t.withinToleranceSince = null;
+      }
+      t.lastValidFeedback = now;
+      const seconds = ms => `${(ms / 1000).toFixed(3)} s`;
+      if (t.entered === null && errors.every(error => error <= 1.5)) {
+        t.entered = now;
+        document.querySelector("#time-coarse").textContent = seconds(now - t.start);
+        document.querySelector("#timing-status").textContent = t.fine
+          ? "Within 1.5°; waiting for fine positioning…" : "Measurement complete (fine positioning off).";
+        if (!t.fine) t.armed = false;
+      }
+      if (t.fine && t.entered !== null && errors.every((error, index) => error <= fineTolerance(measured[index].address))) {
+        if (t.withinToleranceSince === null) t.withinToleranceSince = now;
+        if (now - t.withinToleranceSince < FINE_SETTLE_TIME_MS) {
+          document.querySelector("#timing-status").textContent = "Within tolerance; confirming stability for 1 second…";
+          return;
+        }
+        t.completed = now;
+        t.armed = false;
+        document.querySelector("#time-fine").textContent = seconds(now - t.entered);
+        document.querySelector("#time-total").textContent = seconds(now - t.start);
+        document.querySelector("#timing-status").textContent = "Fine positioning complete.";
+      } else {
+        t.withinToleranceSince = null;
+        if (t.fine && t.entered !== null) {
+          document.querySelector("#timing-status").textContent = "Waiting for average errors to settle within tolerance.";
+        }
+      }
+    }
+
+    const jointRows = new Map();
+    const finePositioning = document.querySelector("#fine-positioning");
+    const fineStatus = document.querySelector("#fine-status");
+    let fineTimer = null;
+    let fineGeneration = 0;
+    const FINE_STEP_INTERVAL_MS = 500;
+    const FINE_JOINT_RETRY_INTERVAL_MS = 1000;
+    const lastFineCorrection = new Map();
+    let lastFineAddress = -1;
+    let lastFineCorrectionTime = -Infinity;
+    let lastJointUpdate = -Infinity;
+
+    async function finePositioningStep() {
+      if (!finePositioning.checked || (testRunning && testPhase !== "waiting")) return;
+      const generation = fineGeneration;
+      const stepStarted = performance.now();
+      try {
+        // A completed attempt stays stopped even if the joint errors drift.
+        // Manual Apply creates a new timing record and permits retries again.
+        if (positionTiming && positionTiming.completed !== null) {
+          fineStatus.textContent = "Fine positioning complete; press Apply to start a new attempt.";
+          return;
+        }
+        if (busy) {
+          fineStatus.textContent = "Fine positioning waiting for current command";
+          return;
+        }
+        const entries = [...jointRows.values()]
+          .filter(entry => !testRunning || hasJointFeedback(entry.joint))
+          .sort((a, b) => a.joint.address - b.joint.address);
+        if (!entries.length || performance.now() - lastJointUpdate > 1000 ||
+            entries.some(entry => !hasJointFeedback(entry.joint))) {
+          fineStatus.textContent = "Fine positioning waiting for fresh joint feedback";
+          return;
+        }
+        const errors = entries.map(entry => {
+          const history = deltaHistory.get(entry.joint.address);
+          return { joint: entry.joint, error: Math.abs(history.reduce((sum, value) => sum + value, 0) / history.length) };
+        });
+        if (errors.some(item => item.error > 1.5)) {
+          fineStatus.textContent = "Fine positioning waiting for all average errors to be within 1.5°";
+          return;
+        }
+        const outliers = errors.filter(item => item.error > fineTolerance(item.joint.address));
+        if (!outliers.length) {
+          fineStatus.textContent = "All average errors within joint tolerances; confirming stability";
+          return;
+        }
+        const now = performance.now();
+        const eligible = outliers.filter(item =>
+          now - (lastFineCorrection.get(item.joint.address) ?? -Infinity) >= FINE_JOINT_RETRY_INTERVAL_MS);
+        if (now - lastFineCorrectionTime < FINE_STEP_INTERVAL_MS || !eligible.length) {
+          fineStatus.textContent = "Fine positioning waiting for joint retry interval";
+          return;
+        }
+        const next = eligible.find(item => item.joint.address > lastFineAddress) || eligible[0];
+        lastFineCorrection.set(next.joint.address, now);
+        lastFineCorrectionTime = now;
+        lastFineAddress = next.joint.address;
+        fineStatus.textContent = `Fine positioning: retrying joint ${next.joint.address + 1}`;
+        await applyJointAngle(next.joint, true);
+      } finally {
+        if (finePositioning.checked && generation === fineGeneration) {
+          fineTimer = setTimeout(finePositioningStep,
+            Math.max(0, FINE_STEP_INTERVAL_MS - (performance.now() - stepStarted)));
+        }
+      }
+    }
+
+    finePositioning.addEventListener("change", () => {
+      clearTimeout(fineTimer);
+      fineGeneration++;
+      if (!finePositioning.checked && positionTiming?.armed && positionTiming.fine) {
+        positionTiming.fine = false;
+        if (positionTiming.entered !== null) positionTiming.armed = false;
+        document.querySelector("#timing-status").textContent = "Fine timing cancelled; measuring only the 1.5° threshold.";
+      }
+      lastFineAddress = -1;
+      fineStatus.textContent = finePositioning.checked ? "Fine positioning enabled" : "Fine positioning off";
+      if (finePositioning.checked) fineTimer = setTimeout(finePositioningStep, FINE_STEP_INTERVAL_MS);
+    });
+
+    function renderJointAngles(data) {
+      const body = document.querySelector("#joint-angles");
+      const addresses = new Set(data.joints.map(joint => joint.address));
+      for (const [address, entry] of jointRows) {
+        if (!addresses.has(address)) {
+          entry.row.remove();
+          jointRows.delete(address);
+          deltaHistory.delete(address);
+        }
+      }
+      for (const joint of data.joints) {
+        let entry = jointRows.get(joint.address);
+        if (!entry) {
+          const row = document.createElement("tr");
+          const label = document.createElement("th");
+          label.scope = "row";
+          label.textContent = `Joint ${joint.address + 1} / ${joint.address}`;
+          row.append(label);
+          const cells = {};
+          for (const key of ["commanded", "actual", "delta", "average"]) {
+            cells[key] = document.createElement("td");
+            row.append(cells[key]);
+          }
+          const action = document.createElement("td");
+          const apply = document.createElement("button");
+          apply.type = "button";
+          apply.className = "joint-apply";
+          apply.textContent = "Apply";
+          apply.setAttribute("aria-label", `Apply joint ${joint.address + 1} commanded angle`);
+          entry = { row, cells, apply, joint };
+          // Read the latest target, without replacing the focused/pressed button.
+          apply.addEventListener("click", () => applyJointAngle(entry.joint));
+          action.append(apply);
+          row.append(action);
+          body.append(row);
+          jointRows.set(joint.address, entry);
+        }
+        if (entry.joint.commanded !== joint.commanded) deltaHistory.delete(joint.address);
+        entry.joint = joint;
+        const { cells, apply } = entry;
+        for (const key of ["commanded", "actual"]) {
+          const cell = cells[key];
+          cell.textContent = joint[key] === null ? "—" : `${joint[key].toFixed(2)}°`;
+          if (key === "actual" && joint.stale && joint.actual !== null) {
+            cell.textContent += " (stale)";
+          }
+        }
+        const delta = cells.delta;
+        delta.textContent = joint.commanded === null || joint.actual === null
+          ? "—"
+          : `${(joint.commanded - joint.actual).toFixed(2)}°${joint.stale ? " (stale)" : ""}`;
+        const history = deltaHistory.get(joint.address) || [];
+        if (!joint.stale && Number.isFinite(joint.commanded) && Number.isFinite(joint.actual)) {
+          history.push(joint.commanded - joint.actual);
+          if (history.length > DELTA_AVERAGE_WINDOW) history.shift();
+          deltaHistory.set(joint.address, history);
+        }
+        const average = cells.average;
+        average.textContent = history.length
+          ? `${(history.reduce((sum, value) => sum + value, 0) / history.length).toFixed(2)}°${joint.stale ? " (stale)" : ""}`
+          : "—";
+        average.title = `${history.length} / ${DELTA_AVERAGE_WINDOW} valid readings`;
+        apply.dataset.available = String(Number.isFinite(joint.commanded));
+        apply.disabled = busy || testRunning || !Number.isFinite(joint.commanded);
+      }
+      lastJointUpdate = performance.now();
+      updatePositionTiming(data);
+      document.querySelector("#joint-status").textContent =
+        data.joints.some(joint => joint.stale)
+          ? "Some joint feedback is missing or older than 2 seconds."
+          : "Joint feedback live";
+    }
+
+    async function pollJointAngles() {
+      const revision = timingRevision;
+      try {
+        const response = await fetch(`${API_URL}/joint_angles`, {
+          cache: "no-store", signal: AbortSignal.timeout(2000)
+        });
+        const data = await readResponse(response);
+        if (!busy && revision === timingRevision) renderJointAngles(data);
+      } catch (error) {
+        lastJointUpdate = -Infinity;
+        if (positionTiming?.armed) {
+          positionTiming.withinToleranceSince = null;
+          positionTiming.lastValidFeedback = null;
+        }
+        for (const entry of jointRows.values()) {
+          entry.apply.dataset.available = "false";
+          entry.apply.disabled = true;
+        }
+        document.querySelector("#joint-status").textContent =
+          `Joint angles unavailable: ${error.message}`;
+      } finally {
+        setTimeout(pollJointAngles, 50);
+      }
+    }
+
+    const testStart = document.querySelector("#test-start");
+    const testNote = document.querySelector("#test-note");
+    const sleepForTest = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    function checkTest() {
+      if (testCancelled) throw new Error("Test stopped. Previously saved records are retained.");
+      if (testFailure) throw testFailure;
+      if (!cameraStream?.getVideoTracks().some(track => track.readyState === "live")) {
+        throw new Error("Camera is not streaming.");
+      }
+    }
+
+    function captureTestImage() {
+      checkTest();
+      if (cameraVideo.readyState < 2 || !cameraVideo.videoWidth || !cameraVideo.videoHeight) {
+        throw new Error("No camera frame is available yet.");
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = cameraVideo.videoWidth;
+      canvas.height = cameraVideo.videoHeight;
+      canvas.getContext("2d").drawImage(cameraVideo, 0, 0);
+      return canvas.toDataURL("image/png");
+    }
+
+    async function postTest(path, data) {
+      const response = await fetch(`${API_URL}/test/${path}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data), signal: AbortSignal.timeout(30000)
+      });
+      return readResponse(response);
+    }
+
+    function lockTestSettings(locked) {
+      document.querySelectorAll("#test-id, #test-iterations, #positions-list input, #positions-list button, #add-position, #fine-positioning, #camera-select, #camera-start")
+        .forEach(input => { input.disabled = locked; });
+      setBusy(busy);
+      testStart.textContent = locked ? "Stop test" : "Start";
+    }
+
+    async function runTest() {
+      if (testRunning) {
+        testCancelled = true;
+        clearTimeout(fineTimer);
+        fineGeneration++;
+        testNote.textContent = "Stopping test…";
+        return;
+      }
+      if (busy) { testNote.textContent = "Wait for the current command to finish."; return; }
+      const testIdInput = document.querySelector("#test-id");
+      const iterationsInput = document.querySelector("#test-iterations");
+      if (!testIdInput.reportValidity() || !iterationsInput.reportValidity()) return;
+      const testId = testIdInput.value.trim();
+      const iterations = iterationsInput.valueAsNumber;
+      const points = savedPositions.filter(point => point.test).map(point => ({
+        id: point.id.trim(), x: Number(point.x), y: Number(point.y), z: Number(point.z)
+      }));
+      if (!testId || !Number.isSafeInteger(iterations) || iterations < 1 || !points.length ||
+          points.some(point => !point.id || ![point.x, point.y, point.z].every(Number.isFinite)) ||
+          new Set(points.map(point => point.id)).size !== points.length) {
+        testNote.textContent = "Enter a test ID, positive iteration count, and select positions with unique nonempty IDs and valid coordinates.";
+        return;
+      }
+      for (const row of document.querySelectorAll("#positions-list tr")) {
+        if (!row.querySelector('input[type="checkbox"]').checked) continue;
+        for (const field of row.querySelectorAll('input[type="number"]')) {
+          if (!field.reportValidity()) return;
+        }
+      }
+      const useFine = finePositioning.checked;
+      let saved = 0;
+      testCancelled = false;
+      testFailure = null;
+      testRunning = true;
+      testPhase = "starting";
+      clearTimeout(preciseTimer);
+      clearTimeout(fineTimer);
+      fineGeneration++;
+      lockTestSettings(true);
+      try {
+        captureTestImage();
+        testNote.textContent = "Creating test session…";
+        await postTest("start", { test_id: testId });
+        for (let iteration = 1; iteration <= iterations; iteration++) {
+          for (const point of points) {
+            checkTest();
+            testPhase = "moving";
+            testNote.textContent = `Iteration ${iteration}/${iterations}, position ${point.id}: moving (${saved} saved)`;
+            const target = { x: point.x / 1000, y: point.y / 1000, z: point.z / 1000 };
+            for (const axis of ["x", "y", "z"]) fields[axis].value = point[axis];
+            editedAxes.clear();
+            startPositionTiming();
+            // Always command precise positioning; the checkbox enables retries only.
+            if (!await sendPose({ ...target, pitch: 0, roll: 0, yaw: 0 }, "set_angle")) {
+              throw new Error(`Position ${point.id}: movement command failed`);
+            }
+            checkTest();
+            armPositionTiming();
+            testPhase = "waiting";
+            if (useFine) {
+              clearTimeout(fineTimer);
+              fineGeneration++;
+              fineTimer = setTimeout(finePositioningStep, FINE_STEP_INTERVAL_MS);
+            }
+            while (true) {
+              checkTest();
+              const achieved = useFine ? positionTiming.completed !== null
+                : positionTiming.entered !== null && performance.now() - positionTiming.entered >= 3000;
+              if (achieved && !busy) break;
+              await sleepForTest(50);
+            }
+            testPhase = "saving";
+            clearTimeout(fineTimer);
+            fineGeneration++;
+            const joints = [...jointRows.values()].map(entry => entry.joint).sort((a, b) => a.address - b.address);
+            if (performance.now() - lastJointUpdate > 1000 || joints.length !== 6 || joints.some((joint, index) =>
+                joint.address !== index || !Number.isFinite(joint.commanded))) {
+              throw new Error("Cannot record state: current commanded angles for all six joints are required.");
+            }
+            const image = captureTestImage();
+            testNote.textContent = `Iteration ${iteration}/${iterations}, position ${point.id}: saving…`;
+            await postTest("state", {
+              test_id: testId, position_id: point.id, image,
+              desired_cartesian_coordinates: target,
+              desired_joint_angles: joints.map(joint => joint.commanded),
+              actual_joint_angles: joints.map(joint => !joint.stale && Number.isFinite(joint.actual) ? joint.actual : null)
+            });
+            saved++;
+          }
+        }
+        checkTest();
+        testNote.textContent = `Test complete: ${saved} records saved to ${testId}.`;
+      } catch (error) {
+        testNote.textContent = `${error.message} (${saved} records saved)`;
+      } finally {
+        clearTimeout(fineTimer);
+        fineGeneration++;
+        testRunning = false;
+        testPhase = "idle";
+        lockTestSettings(false);
+      }
+    }
+
+    testStart.addEventListener("click", runTest);
+
+    loadPose();
+    pollJointAngles();
+  </script>
+</body>
+</html>

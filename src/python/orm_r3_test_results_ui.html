@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ORM R3 Test Results</title>
+<style>
+:root { color-scheme:dark; font-family:system-ui,sans-serif; background:#11151c; color:#edf2f7; }
+* { box-sizing:border-box; }
+body { margin:0; padding:24px; }
+main { max-width:1600px; margin:auto; }
+h1 { margin:0 0 20px; }
+.toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+select,button { padding:10px; color:inherit; background:#283447; border:1px solid #54647d; border-radius:8px; font:inherit; }
+select { min-width:220px; }
+button { cursor:pointer; }
+button:disabled { opacity:.5; cursor:wait; }
+.analysis-column { min-width:0; display:grid; gap:24px; }
+.panels { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(300px,1fr); gap:24px; align-items:start; }
+section { background:#1a202b; padding:20px; border:1px solid #344055; border-radius:16px; min-width:0; }
+h2 { margin-top:0; }
+.scroll { overflow:auto; max-height:70vh; }
+table { width:100%; border-collapse:collapse; font-size:.85rem; }
+th,td { padding:10px; border-bottom:1px solid #344055; text-align:left; }
+th { position:sticky; top:0; background:#1a202b; }
+tbody tr { cursor:pointer; }
+tbody tr:hover { background:#283447; }
+tr[aria-selected="true"] { background:#35455d; }
+tr:focus { outline:2px solid #8dd5a5; outline-offset:-2px; }
+.angles { min-width:180px; font-family:ui-monospace,monospace; }
+img { display:block; width:100%; background:#080b10; }
+ .image-viewport { max-width:100%; max-height:70vh; overflow:auto; }
+.image-stage { position:relative; }
+.image-stage.native-size { width:max-content; }
+.image-stage.native-size img { width:auto; max-width:none; }
+.image-stage[hidden] { display:none; }
+#overlay { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; }
+#scale-square { fill:#8dd5a522; stroke:#8dd5a5; stroke-width:2; vector-effect:non-scaling-stroke; cursor:move; }
+#scale-handle { fill:#8dd5a5; cursor:nwse-resize; }
+#pose-point { fill:#ff6464; stroke:white; stroke-width:2; vector-effect:non-scaling-stroke; pointer-events:none; }
+#annotation-note { color:#9facbd; font-size:.85rem; }
+button[aria-pressed="true"] { background:#466080; }
+#status,#image-status { color:#9facbd; }
+@media(max-width:1000px) { .panels { grid-template-columns:1fr; } }
+</style>
+</head>
+<body><main>
+<h1>ORM R3 Test Results</h1>
+<div class="toolbar"><label for="session">Test session</label><select id="session"><option value="">Select a session</option></select><button id="refresh" type="button">Refresh</button></div>
+<p id="status" role="status">Loading sessions…</p>
+<div class="panels">
+<section><h2>Test states</h2><p>Coordinates in metres; joint angles in degrees, ordered J1–J6. — means missing feedback.</p>
+<div class="scroll"><table aria-label="Test states"><thead><tr><th>#</th><th>Position ID</th><th>Captured</th><th>Desired X / Y / Z</th><th>Desired joint angles</th><th>Actual joint angles</th><th>End effector X / Y (px)</th><th>End effector X / Y (mm)</th></tr></thead><tbody id="states"></tbody></table></div></section>
+<div class="analysis-column">
+<section><h2 id="image-title">Captured image</h2><p id="image-status">Select a state to view its image.</p><div class="toolbar" role="group" aria-label="Image annotation mode">
+<button id="pose-mode" type="button" aria-pressed="true">End Effector Pose Estimate</button>
+<button id="scale-mode" type="button" aria-pressed="false">Scale Selection</button>
+<button id="save-scale" type="button" disabled>Save session scale</button>
+</div><p id="annotation-note">Image at native size (1:1). Scroll to the end effector and click to mark it. Coordinates start at the top-left.</p>
+<div id="image-viewport" class="image-viewport" tabindex="0" aria-label="Scrollable image; use scrollbars to reach the end-effector point"><div id="image-stage" class="image-stage" hidden><img id="image" alt="">
+<svg id="overlay" xmlns="http://www.w3.org/2000/svg" aria-label="Image annotation overlay">
+<rect id="scale-square" hidden></rect><rect id="scale-handle" hidden></rect><circle id="pose-point" hidden></circle>
+</svg></div></div></section>
+<section aria-labelledby="analysis-heading">
+<div class="toolbar"><h2 id="analysis-heading">Analysis</h2><button id="analyse" type="button" disabled>Analyse</button></div>
+<p>Image-plane coordinates in mm, measured from the top-left. Standard deviation uses n − 1. Repeatability is ±3σ; maximum ellipse diameter is the major-axis diameter of the 3σ covariance ellipse.</p>
+<p id="analysis-status" role="status">Select a session and save its scale before analysing.</p>
+<div class="scroll"><table aria-label="Position repeatability statistics"><thead><tr>
+<th>Position ID</th><th>Used / total</th><th>Mean X (mm)</th><th>Mean Y (mm)</th><th>SD X (mm)</th><th>SD Y (mm)</th><th>Repeatability X (±mm)</th><th>Repeatability Y (±mm)</th><th>Max ellipse diameter (mm)</th>
+</tr></thead><tbody id="analysis-results"></tbody></table></div>
+</section>
+</div>
+</div>
+</main>
+<script>
+const API_URL = "http://localhost:7999";
+const session = document.querySelector("#session");
+const states = document.querySelector("#states");
+const status = document.querySelector("#status");
+const refresh = document.querySelector("#refresh");
+const picture = document.querySelector("#image");
+const imageStatus = document.querySelector("#image-status");
+let revision = 0;
+let imageRequest = null;
+let imageUrl = null;
+let currentRecord = null;
+let currentRecords = [];
+let calibration = null;
+let square = null;
+let mode = "pose";
+let saving = false;
+let drag = null;
+const stage = document.querySelector("#image-stage");
+const viewport = document.querySelector("#image-viewport");
+const overlay = document.querySelector("#overlay");
+const squareShape = document.querySelector("#scale-square");
+const handle = document.querySelector("#scale-handle");
+const pointShape = document.querySelector("#pose-point");
+const note = document.querySelector("#annotation-note");
+const saveScale = document.querySelector("#save-scale");
+const rowCells = new Map();
+const analyseButton = document.querySelector("#analyse");
+const analysisResults = document.querySelector("#analysis-results");
+const analysisStatus = document.querySelector("#analysis-status");
+
+function resetAnalysis() {
+  analysisResults.replaceChildren();
+  const validScale = Number.isFinite(calibration?.mm_per_pixel) && calibration.mm_per_pixel > 0;
+  analyseButton.disabled = saving || !currentRecords.length || !validScale;
+  analysisStatus.textContent = validScale && currentRecords.length
+    ? "Press Analyse to calculate statistics for the current annotations."
+    : "A session with saved states and a valid scale is required.";
+}
+
+function positionStatistics(points) {
+  if (!points.length) return [null, null, null, null, null, null, null];
+  // Centered online covariance avoids subtracting large squared coordinates.
+  let n = 0, meanX = 0, meanY = 0, sumXX = 0, sumYY = 0, sumXY = 0;
+  for (const point of points) {
+    n++;
+    const dx = point.x - meanX, dy = point.y - meanY;
+    meanX += dx / n; meanY += dy / n;
+    sumXX += dx * (point.x - meanX);
+    sumYY += dy * (point.y - meanY);
+    sumXY += dx * (point.y - meanY);
+  }
+  if (n < 2) return [meanX, meanY, null, null, null, null, null];
+  const varianceX = Math.max(0, sumXX / (n - 1));
+  const varianceY = Math.max(0, sumYY / (n - 1));
+  const covariance = sumXY / (n - 1);
+  const sx = Math.sqrt(varianceX), sy = Math.sqrt(varianceY);
+  const lambdaMax = (varianceX + varianceY + Math.hypot(varianceX - varianceY, 2 * covariance)) / 2;
+  return [meanX, meanY, sx, sy, 3 * sx, 3 * sy, 6 * Math.sqrt(Math.max(0, lambdaMax))];
+}
+
+function analyseSession() {
+  if (analyseButton.disabled) return;
+  analysisResults.replaceChildren();
+  const groups = new Map();
+  let skipped = 0;
+  for (const record of currentRecords) {
+    if (!groups.has(record.position_id)) groups.set(record.position_id, {total:0, points:[]});
+    const group = groups.get(record.position_id);
+    group.total++;
+    const point = record.end_effector_pixel;
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) ||
+        point.image_width !== calibration.image_width || point.image_height !== calibration.image_height) {
+      skipped++;
+      continue;
+    }
+    group.points.push({x:point.x * calibration.mm_per_pixel, y:point.y * calibration.mm_per_pixel});
+  }
+  for (const [id, group] of groups) {
+    const row = document.createElement("tr");
+    const values = [id, `${group.points.length} / ${group.total}`, ...positionStatistics(group.points).map(format)];
+    for (const value of values) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    }
+    analysisResults.append(row);
+  }
+  analysisStatus.textContent = `${groups.size} positions analysed. ${skipped} states excluded (missing annotation or incompatible image resolution). At least two points are needed for deviation and repeatability.`;
+}
+analyseButton.addEventListener("click", analyseSession);
+
+async function readJson(path) {
+  const response = await fetch(`${API_URL}${path}`, {cache:"no-store", signal:AbortSignal.timeout(10000)});
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+function clearImage() {
+  imageRequest?.abort();
+  imageRequest = null;
+  stage.hidden = true;
+  currentRecord = null;
+  square = null;
+  drag = null;
+  saveScale.disabled = true;
+  picture.removeAttribute("src");
+  if (imageUrl) URL.revokeObjectURL(imageUrl);
+  imageUrl = null;
+  document.querySelector("#image-title").textContent = "Captured image";
+  imageStatus.textContent = "Select a state to view its image.";
+}
+async function selectState(record, row, testId) {
+  if (saving) return;
+  clearImage();
+  currentRecord = record;
+  for (const other of states.children) other.setAttribute("aria-selected", String(other === row));
+  document.querySelector("#image-title").textContent = `Position ${record.position_id}`;
+  picture.alt = `Test ${testId}, position ${record.position_id}, captured ${record.timestamp}`;
+  imageStatus.textContent = "Loading image…";
+  const controller = new AbortController();
+  imageRequest = controller;
+  try {
+    const query = new URLSearchParams({test_id:testId, filename:record.image});
+    const response = await fetch(`${API_URL}/test/image?${query}`, {signal:controller.signal});
+    if (!response.ok) throw new Error(`Image unavailable (HTTP ${response.status})`);
+    const blob = await response.blob();
+    if (imageRequest !== controller) return;
+    imageUrl = URL.createObjectURL(blob);
+    picture.src = imageUrl;
+    picture.hidden = false;
+    imageStatus.textContent = record.timestamp;
+  } catch(error) {
+    if (imageRequest === controller) imageStatus.textContent = error.message;
+  }
+}
+picture.addEventListener("error", () => { stage.hidden = true; imageStatus.textContent = "This image could not be displayed."; });
+const format = value => Number.isFinite(value) ? value.toFixed(3) : "—";
+function renderRecords(records, testId) {
+  rowCells.clear();
+  records.forEach((record, index) => {
+    const row = document.createElement("tr");
+    row.tabIndex = 0;
+    row.setAttribute("aria-selected", "false");
+    const p = record.desired_cartesian_coordinates || {};
+    const values = [index + 1, record.position_id, record.timestamp,
+      [p.x,p.y,p.z].map(format).join(" / "),
+      (record.desired_joint_angles || []).map(format).join(", "),
+      (record.actual_joint_angles || []).map(format).join(", ")];
+    values.forEach((value, column) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      if (column >= 4) cell.className = "angles";
+      row.append(cell);
+    });
+    row.addEventListener("click", () => selectState(record, row, testId));
+    row.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectState(record, row, testId); }
+    });
+    const pixels = document.createElement("td");
+    const millimetres = document.createElement("td");
+    row.append(pixels, millimetres);
+    rowCells.set(record.record_id, { pixels, millimetres });
+    updateEstimateCells(record);
+    states.append(row);
+  });
+}
+function updateEstimateCells(record) {
+  const cells = rowCells.get(record.record_id);
+  const point = record.end_effector_pixel;
+  cells.pixels.textContent = point ? `${format(point.x)} / ${format(point.y)}` : "—";
+  const compatible = point && calibration && point.image_width === calibration.image_width && point.image_height === calibration.image_height;
+  cells.millimetres.textContent = compatible
+    ? `${format(point.x * calibration.mm_per_pixel)} / ${format(point.y * calibration.mm_per_pixel)}` : "—";
+}
+function updateImageSize() {
+  stage.classList.toggle("native-size", mode === "pose");
+  // Explicit dimensions keep the image and SVG aligned at one CSS pixel per image pixel.
+  stage.style.width = mode === "pose" && picture.naturalWidth ? `${picture.naturalWidth}px` : "";
+  picture.style.width = mode === "pose" && picture.naturalWidth ? `${picture.naturalWidth}px` : "";
+  viewport.scrollLeft = 0;
+  viewport.scrollTop = 0;
+}
+function setMode(next) {
+  if (saving) return;
+  mode = next;
+  updateImageSize();
+  document.querySelector("#pose-mode").setAttribute("aria-pressed", String(mode === "pose"));
+  document.querySelector("#scale-mode").setAttribute("aria-pressed", String(mode === "scale"));
+  note.textContent = mode === "pose" ? "Image at native size (1:1). Scroll to the end effector and click to save. Origin: top-left; X right, Y down."
+    : "Drag the square to move it; drag its bottom-right handle to resize. It represents 100 × 100 mm. Press Save session scale.";
+  drawAnnotations();
+}
+function drawAnnotations() {
+  const ready = currentRecord && !stage.hidden;
+  const showSquare = ready && mode === "scale" && square;
+  squareShape.style.display = showSquare ? "" : "none";
+  handle.style.display = showSquare ? "" : "none";
+  squareShape.removeAttribute("hidden"); handle.removeAttribute("hidden");
+  saveScale.disabled = !showSquare || saving;
+  if (showSquare) {
+    for (const [key, value] of Object.entries({x:square.x,y:square.y,width:square.size,height:square.size})) squareShape.setAttribute(key,value);
+    const size = 12 * picture.naturalWidth / Math.max(1, overlay.getBoundingClientRect().width);
+    for (const [key,value] of Object.entries({x:square.x+square.size-size/2,y:square.y+square.size-size/2,width:size,height:size})) handle.setAttribute(key,value);
+  }
+  const point = currentRecord?.end_effector_pixel;
+  pointShape.removeAttribute("hidden");
+  pointShape.style.display = ready && point ? "" : "none";
+  if (ready && point) {
+    pointShape.setAttribute("cx", point.x); pointShape.setAttribute("cy", point.y);
+    pointShape.setAttribute("r", 5 * picture.naturalWidth / Math.max(1, overlay.getBoundingClientRect().width));
+  }
+}
+picture.addEventListener("load", () => {
+  if (!currentRecord) return;
+  stage.hidden = false;
+  updateImageSize();
+  overlay.setAttribute("viewBox", `0 0 ${picture.naturalWidth} ${picture.naturalHeight}`);
+  const compatible = calibration && calibration.image_width === picture.naturalWidth && calibration.image_height === picture.naturalHeight;
+  square = compatible ? {x:calibration.x,y:calibration.y,size:calibration.size_pixels}
+    : {x:picture.naturalWidth/4,y:picture.naturalHeight/4,size:Math.min(picture.naturalWidth,picture.naturalHeight)/4};
+  drawAnnotations();
+});
+function imagePoint(event) {
+  const rect = overlay.getBoundingClientRect();
+  return {x:Math.max(0,Math.min(picture.naturalWidth-0.001,(event.clientX-rect.left)*picture.naturalWidth/rect.width)),
+    y:Math.max(0,Math.min(picture.naturalHeight-0.001,(event.clientY-rect.top)*picture.naturalHeight/rect.height))};
+}
+async function saveAnnotation(scale, values) {
+  if (saving || !currentRecord) return;
+  saving = true;
+  analyseButton.disabled = true;
+  session.disabled = refresh.disabled = true;
+  drawAnnotations();
+  const record = currentRecord;
+  try {
+    const response = await fetch(`${API_URL}/test/${scale ? "scale" : "pose_estimate"}`, {
+      method:"POST", headers:{"Content-Type":"application/json"}, signal:AbortSignal.timeout(10000),
+      body:JSON.stringify({test_id:session.value,record_id:record.record_id,
+        image_width:picture.naturalWidth,image_height:picture.naturalHeight,...values})
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (scale) calibration = result;
+    else record.end_effector_pixel = result;
+    currentRecords.forEach(updateEstimateCells);
+    note.textContent = scale ? `Session scale saved: ${format(calibration.mm_per_pixel)} mm/pixel.` : "End-effector point saved.";
+  } catch(error) { note.textContent = `Could not save: ${error.message}`; }
+  finally { saving = false; session.disabled = refresh.disabled = false; drawAnnotations(); resetAnalysis(); }
+}
+overlay.addEventListener("pointerdown", event => {
+  if (saving || !currentRecord || stage.hidden || event.button !== 0) return;
+  const point = imagePoint(event);
+  if (mode === "pose") { saveAnnotation(false, point); return; }
+  if (event.target !== squareShape && event.target !== handle) return;
+  event.preventDefault();
+  drag = {pointer:event.pointerId, resize:event.target === handle, start:point, original:{...square}};
+  overlay.setPointerCapture(event.pointerId);
+});
+overlay.addEventListener("pointermove", event => {
+  if (!drag || drag.pointer !== event.pointerId) return;
+  const point = imagePoint(event);
+  const dx = point.x-drag.start.x, dy = point.y-drag.start.y;
+  if (drag.resize) square.size = Math.max(1,Math.min(drag.original.size+Math.max(dx,dy),picture.naturalWidth-square.x,picture.naturalHeight-square.y));
+  else {
+    square.x = Math.max(0,Math.min(picture.naturalWidth-square.size,drag.original.x+dx));
+    square.y = Math.max(0,Math.min(picture.naturalHeight-square.size,drag.original.y+dy));
+  }
+  drawAnnotations();
+});
+for (const eventName of ["pointerup","pointercancel","lostpointercapture"]) overlay.addEventListener(eventName, () => { drag = null; });
+document.querySelector("#pose-mode").addEventListener("click", () => setMode("pose"));
+document.querySelector("#scale-mode").addEventListener("click", () => setMode("scale"));
+saveScale.addEventListener("click", () => saveAnnotation(true, {x:square.x,y:square.y,size_pixels:square.size}));
+window.addEventListener("resize", drawAnnotations);
+
+async function loadStates() {
+  const request = ++revision;
+  currentRecords = [];
+  calibration = null;
+  resetAnalysis();
+  states.replaceChildren();
+  clearImage();
+  const testId = session.value;
+  if (!testId) { status.textContent = "Select a test session."; return; }
+  status.textContent = "Loading states…";
+  try {
+    const data = await readJson(`/test/states?${new URLSearchParams({test_id:testId})}`);
+    if (request !== revision) return;
+    calibration = data.calibration;
+    currentRecords = data.records;
+    resetAnalysis();
+    renderRecords(data.records, testId);
+    status.textContent = data.records.length ? `${data.records.length} states. Select a row to view its image.` : "This session has no saved states yet.";
+  } catch(error) { if (request === revision) status.textContent = error.message; }
+}
+async function loadSessions() {
+  ++revision;
+  currentRecords = [];
+  calibration = null;
+  resetAnalysis();
+  clearImage();
+  states.replaceChildren();
+  refresh.disabled = true;
+  session.disabled = true;
+  status.textContent = "Loading sessions…";
+  try {
+    const data = await readJson("/test/sessions");
+    const previous = session.value;
+    session.replaceChildren(new Option("Select a session", ""));
+    data.sessions.forEach(id => session.append(new Option(id, id)));
+    if (data.sessions.includes(previous)) session.value = previous;
+    if (session.value) await loadStates();
+    else status.textContent = data.sessions.length ? "Select a test session." : "No test sessions found.";
+  } catch(error) { status.textContent = error.message; }
+  finally { refresh.disabled = false; session.disabled = false; }
+}
+session.addEventListener("change", loadStates);
+refresh.addEventListener("click", loadSessions);
+window.addEventListener("pagehide", clearImage);
+loadSessions();
+</script></body></html>
