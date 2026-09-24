@@ -661,8 +661,11 @@ class OSP:
         angle = self.input_buffer[5] | (self.input_buffer[6] << 8)
         if angle & 0x8000 !=0:
             angle = -((~angle & 0xffff) + 1)
-        self.joint_angle[actuator_no] = angle
-        self.joint_angle_feedback[actuator_no] = (angle, time.monotonic())
+        if len(self.joint_angle) > actuator_no:
+            self.joint_angle[actuator_no] = angle
+            self.joint_angle_feedback[actuator_no] = (angle, time.monotonic())
+        else:
+            print("Actuator Number is invalid:",actuator_no)
         if self.orm_is_recording:
             timediff = (datetime.datetime.now() - self.orm_record_start_time).total_seconds()
             self.orm_record_buffer.append({'joint':actuator_no,'angle':angle,'timestamp':timediff})
@@ -674,7 +677,10 @@ class OSP:
         speed = self.input_buffer[5] | (self.input_buffer[6] << 8)
         if speed & 0x8000 !=0:
             speed = -((~speed & 0xffff) + 1)
-        self.joint_speed[actuator_no] = speed
+        if len(self.joint_speed)>actuator_no:
+            self.joint_speed[actuator_no] = speed
+        else:
+            print("orm_info_speed Invalid actuator number:",actuator_no)
         #print("Current Speed For Actuator "+str(actuator_no)+" is "+str(speed))
     
     def orm_start_trajectory_record(self):
