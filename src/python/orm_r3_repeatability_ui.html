@@ -1015,9 +1015,8 @@
         id: point.id.trim(), x: Number(point.x), y: Number(point.y), z: Number(point.z)
       }));
       if (!testId || !Number.isSafeInteger(iterations) || iterations < 1 || !points.length ||
-          points.some(point => !point.id || ![point.x, point.y, point.z].every(Number.isFinite)) ||
-          new Set(points.map(point => point.id)).size !== points.length) {
-        testNote.textContent = "Enter a test ID, positive iteration count, and select positions with unique nonempty IDs and valid coordinates.";
+          points.some(point => !point.id || ![point.x, point.y, point.z].every(Number.isFinite))) {
+        testNote.textContent = "Enter a test ID, positive iteration count, and select positions with nonempty IDs and valid coordinates.";
         return;
       }
       for (const row of document.querySelectorAll("#positions-list tr")) {
