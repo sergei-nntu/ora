@@ -110,6 +110,7 @@ OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_MAX = 0x19
 OSP_ORA_CMD_SET_POSITION_CONTROL_IMPULSE_TIME_GAIN = 0x1A
 OSP_ORA_CMD_SET_EFFORT_LOCK_TIMEOUT = 0x1B
 OSP_ORA_CMD_SET_EFFORT_LOCK_FORCE_TIMEOUT = 0x1C
+ORA_SET_EFFORT_LOCK = 0x1D
 
 OSP_OQP_DURATION_MSB_INDEX = 5
 OSP_OQP_DURATION_LSB_INDEX = 4
@@ -436,6 +437,21 @@ class OSP:
         cmd_bytes[OSP_ORM_ANGLE_MSB_INDEX] = (value >> 8) & 0xff
         cmd_bytes[OSP_ORM_ANGLE_LSB_INDEX] = value & 0xff
         self.osp_send_command(cmd_bytes)
+
+    def ora_set_effort_lock(self, address, external_effort_lock_value):
+        """Hold current effort for any nonzero integer; zero resumes normal control.
+
+        A subsequent set_angle or set_coarse_angle command releases the hold.
+        """
+        if not isinstance(external_effort_lock_value, int):
+            raise TypeError("external_effort_lock_value must be an integer")
+        external_effort_lock_command = self.command_buffer_pattern.copy()
+        external_effort_lock_command[OSP_MSG_DEV_INDEX] = OSP_DEV_ORA
+        external_effort_lock_command[OSP_MSG_CMD_INDEX] = ORA_SET_EFFORT_LOCK
+        external_effort_lock_command[OSP_MSG_ADDRESS_INDEX] = address
+        external_effort_lock_command[OSP_ORM_ANGLE_MSB_INDEX] = 0
+        external_effort_lock_command[OSP_ORM_ANGLE_LSB_INDEX] = int(external_effort_lock_value != 0)
+        self.osp_send_command(external_effort_lock_command)
 
     def ora_set_effort_lock_timeout(self, address, value):
         """Persist this joint's effort lock timeout in ms, clamped to 1..65535."""

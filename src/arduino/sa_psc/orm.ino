@@ -121,6 +121,21 @@ void ORM::ospHandleGenericCommand(){
   // TODO
 }
 
+void ORM::cmdSetEffortLock(){
+  unsigned short external_effort_lock_value =
+    ((unsigned short)(unsigned char)osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX] << 8) |
+    (unsigned char)osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
+  if (external_effort_lock_value != 0 && !external_effort_lock_enabled) {
+    external_effort_lock_effort = effort_lock_last_effort;
+  }
+  external_effort_lock_enabled = external_effort_lock_value != 0;
+  // Releasing an external hold starts a fresh automatic-lock attempt.
+  effort_locked = false;
+  effort_lock_candidate_active = false;
+  effort_lock_force_active = false;
+  effort_lock_forced = false;
+}
+
 void ORM::cmdSetAngle(){
   int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   char force = osp_input_buffer[OSP_ORM_ANGLE_FORCE_INDEX];
@@ -133,9 +148,11 @@ void ORM::cmdSetAngle(){
   effort_lock_force_active = false;
   effort_lock_forced = false;
   effort_lock_candidate_active = false;
+  external_effort_lock_enabled = false;
 }
 
 void ORM::cmdSetCoarseAngle(){
+  
   int angle = ((int)(osp_input_buffer[OSP_ORM_ANGLE_MSB_INDEX]) << 8) | osp_input_buffer[OSP_ORM_ANGLE_LSB_INDEX];
   char force = osp_input_buffer[OSP_ORM_ANGLE_FORCE_INDEX];
   j_angle_desired = angle;
@@ -147,6 +164,7 @@ void ORM::cmdSetCoarseAngle(){
   effort_lock_force_active = false;
   effort_lock_forced = false;
   effort_lock_candidate_active = false;
+  external_effort_lock_enabled = false;
 }
 
 void ORM::cmdSetCorrAngle(){
@@ -374,6 +392,9 @@ void ORM::ospHandleORACommand(){
   if (address == current_address){
     int cmd = osp_input_buffer[OSP_MSG_CMD_INDEX];  
 
+    if (cmd == ORA_SET_EFFORT_LOCK) {
+      cmdSetEffortLock();
+    }
     if (cmd == OSP_ORA_CMD_SET_ANGLE) {
       cmdSetAngle();
     }
@@ -540,7 +561,6 @@ void ORM::updateActuatorsPosition(){
   // Effort lock state.
   static unsigned long effort_lock_candidate_start = 0;
   static short effort_lock_target_angle = 0;
-  static int last_applied_effort = 0;
 
   // Position impulse controller state.
   static bool position_control_active = false;
@@ -550,6 +570,24 @@ void ORM::updateActuatorsPosition(){
   static unsigned long position_control_impulse_count = 0;
   static int position_control_impulse_effort = 0;
 
+  if (external_effort_lock_enabled && motor_power != 0) {
+    // Ignore angle drift while holding the effort captured by the command.
+    position_control_active = false;
+    position_control_impulse_running = false;
+    position_control_impulse_width = 0;
+    position_control_impulse_count = 0;
+    position_control_impulse_effort = 0;
+    if (external_effort_lock_effort > 0) {
+      analogWrite(A_ZERO_FWD_PIN, external_effort_lock_effort);
+      analogWrite(A_ZERO_BCK_PIN, 0);
+    } else {
+      analogWrite(A_ZERO_FWD_PIN, 0);
+      analogWrite(A_ZERO_BCK_PIN, -external_effort_lock_effort);
+    }
+    effort_lock_last_effort = external_effort_lock_effort;
+    return;
+  }
+
   if (control_mode == CONTROL_MODE_FORCE_PWM) {
     target_angle_stable_iterations = 0;
     proportional_speed_control_effort = 0;
@@ -557,7 +595,7 @@ void ORM::updateActuatorsPosition(){
     effort_locked = false;
     effort_lock_force_active = false;
     effort_lock_forced = false;
-    last_applied_effort = 0;
+    effort_lock_last_effort = control_pwm;
     position_control_active = false;
     position_control_impulse_running = false;
     position_control_impulse_count = 0;
@@ -573,6 +611,7 @@ void ORM::updateActuatorsPosition(){
   }
 
   if (motor_power == 0) {
+    external_effort_lock_enabled = false;
     // If no motor power - just apply the same angle that is currently read.
     j_angle_current = j_angle_read;
     j_angle_desired = j_angle_read;
@@ -584,7 +623,7 @@ void ORM::updateActuatorsPosition(){
     effort_locked = false;
     effort_lock_force_active = false;
     effort_lock_forced = false;
-    last_applied_effort = 0;
+    effort_lock_last_effort = 0;
     impulse_debt = 0;
     speed_diff_sign_prev = 0;
     target_angle_stable_iterations = 0;
@@ -609,7 +648,7 @@ void ORM::updateActuatorsPosition(){
     effort_locked = false;
     effort_lock_force_active = false;
     effort_lock_forced = false;
-    last_applied_effort = 0;
+    effort_lock_last_effort = 0;
     impulse_debt = 0;
     speed_diff_sign_prev = 0;
     target_angle_stable_iterations = 0;
@@ -645,12 +684,12 @@ void ORM::updateActuatorsPosition(){
       effort_lock_forced = false;
       effort_lock_candidate_active = false;
     } else {
-      if (last_applied_effort > 0) {
-        analogWrite(A_ZERO_FWD_PIN, last_applied_effort);
+      if (effort_lock_last_effort > 0) {
+        analogWrite(A_ZERO_FWD_PIN, effort_lock_last_effort);
         analogWrite(A_ZERO_BCK_PIN, 0);
       } else {
         analogWrite(A_ZERO_FWD_PIN, 0);
-        analogWrite(A_ZERO_BCK_PIN, -last_applied_effort);
+        analogWrite(A_ZERO_BCK_PIN, -effort_lock_last_effort);
       }
       return;
     }
@@ -691,12 +730,12 @@ void ORM::updateActuatorsPosition(){
     position_control_impulse_count = 0;
     position_control_impulse_effort = 0;
 
-    if (last_applied_effort > 0) {
-      analogWrite(A_ZERO_FWD_PIN, last_applied_effort);
+    if (effort_lock_last_effort > 0) {
+      analogWrite(A_ZERO_FWD_PIN, effort_lock_last_effort);
       analogWrite(A_ZERO_BCK_PIN, 0);
     } else {
       analogWrite(A_ZERO_FWD_PIN, 0);
-      analogWrite(A_ZERO_BCK_PIN, -last_applied_effort);
+      analogWrite(A_ZERO_BCK_PIN, -effort_lock_last_effort);
     }
     return;
   }
@@ -882,7 +921,7 @@ void ORM::updateActuatorsPosition(){
     analogWrite(A_ZERO_FWD_PIN, 0);
     analogWrite(A_ZERO_BCK_PIN, -a_zero_effort);
   }
-  last_applied_effort = a_zero_effort;
+  effort_lock_last_effort = a_zero_effort;
 }
 
 void ORM::updateSensorsMeasurements(){

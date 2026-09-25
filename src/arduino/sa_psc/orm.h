@@ -100,6 +100,9 @@ class ORM {
 
     bool effort_lock_candidate_active = false;
     bool effort_locked = false;
+    bool external_effort_lock_enabled = false;
+    int external_effort_lock_effort = 0;
+    int effort_lock_last_effort = 0;
     bool effort_lock_force_active = false;
     bool effort_lock_forced = false;
     unsigned long effort_lock_force_start = 0;
@@ -148,6 +151,7 @@ class ORM {
     void ospHandleORACommand();
     void ospHandleGenericCommand();
 
+    void cmdSetEffortLock();
     void cmdSetAngle();
     void cmdSetCoarseAngle();
     void cmdMakeSteps();
