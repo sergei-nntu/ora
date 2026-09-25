@@ -22,6 +22,17 @@ class ORMR3Control:
         print("Point Angles: "+str(self.joint_angles))
         self.calculate_end_effector_pose()
 
+    def set_effort_lock(self, value):
+        """Queue an external effort-lock command for every revolute joint."""
+        if type(value) is not int:
+            raise ValueError("value must be an integer")
+        if self.osp is None:
+            raise ValueError("Serial connection is required to lock joint effort")
+        addresses = list(range(len(self.commanded_joint_angles)))
+        for address in addresses:
+            self.osp.ora_set_effort_lock(address, value)
+        return {"addresses": addresses, "locked": value != 0, "status": "queued"}
+
     def set_joint_angle(self, address, angle):
         """Send a precise angle in radians to one OSP joint, including retries."""
         indices = [i for i, link in enumerate(self.chain.links)

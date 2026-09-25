@@ -142,6 +142,7 @@
       font-size: .9rem;
     }
 
+    .fine-tolerance { width: 85px; padding: 6px; color: inherit; background: #111720; border: 1px solid #54647d; border-radius: 6px; font: inherit; }
     .joint-angles { width: 100%; margin-top: 24px; border-collapse: collapse; }
     .joint-angles caption { text-align: left; margin-bottom: 8px; font-weight: 650; }
     .joint-angles th, .joint-angles td { padding: 8px; text-align: right; border-bottom: 1px solid #344055; }
@@ -215,10 +216,10 @@
 
     <table class="joint-angles">
       <caption>Joint angles (°)</caption>
-      <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th><th scope="col" title="Mean of the last 20 valid delta readings">Average delta (°)</th><th scope="col">Action</th></tr></thead>
+      <thead><tr><th scope="col">Joint / address</th><th scope="col">Commanded</th><th scope="col">Actual</th><th scope="col" title="Commanded minus actual">Delta (°)</th><th scope="col" title="Mean of the last 20 valid delta readings">Average delta (°)</th><th scope="col">Action</th><th scope="col">Fine tolerance (±°)</th></tr></thead>
       <tbody id="joint-angles"></tbody>
     </table>
-    <label title="Average error tolerance: joints 1–3 ±0.1°; joints 4–6 ±0.25°"><input id="fine-positioning" type="checkbox"> Fine Positioning</label>
+    <label title="Average error tolerances are configurable in the joint table"><input id="fine-positioning" type="checkbox"> Fine Positioning</label>
     <p id="fine-status">Fine positioning off</p>
     <p id="joint-status">Waiting for joint feedback…</p>
 
@@ -533,9 +534,46 @@
       document.querySelector("#timing-status").textContent = "Measurement stopped: command failed.";
     }
 
+    const FINE_TOLERANCES_KEY = "orm-r3-fine-tolerances";
+    let fineTolerances = {};
+    try {
+      const stored = JSON.parse(localStorage.getItem(FINE_TOLERANCES_KEY) || "{}");
+      if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+        for (const [address, value] of Object.entries(stored)) {
+          if (Number.isFinite(value) && value > 0) fineTolerances[address] = value;
+        }
+      }
+    } catch (error) { /* Use default tolerances when storage is unavailable. */ }
+
     function fineTolerance(address) {
-      // Joint labels 4–6 correspond to zero-based OSP addresses 3–5.
-      return address >= 3 && address <= 5 ? 0.25 : 0.1;
+      return fineTolerances[address] ?? (address >= 3 && address <= 5 ? 0.25 : 0.1);
+    }
+
+    function createFineToleranceInput(address) {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.className = "fine-tolerance";
+      input.step = "any";
+      input.min = "0";
+      input.required = true;
+      input.value = fineTolerance(address);
+      input.setAttribute("aria-label", `Joint ${address + 1} fine tolerance in degrees`);
+      input.addEventListener("change", () => {
+        const value = input.valueAsNumber;
+        if (!Number.isFinite(value) || value <= 0) {
+          input.value = fineTolerance(address);
+          showStatus("Fine tolerance must be a positive number in degrees.", true);
+          return;
+        }
+        fineTolerances[address] = value;
+        if (positionTiming?.armed) positionTiming.withinToleranceSince = null;
+        try {
+          localStorage.setItem(FINE_TOLERANCES_KEY, JSON.stringify(fineTolerances));
+        } catch (error) {
+          showStatus("Tolerance applied for this page, but browser storage is unavailable.", true);
+        }
+      });
+      return input;
     }
 
     function updatePositionTiming(data) {
@@ -698,6 +736,10 @@
           apply.addEventListener("click", () => applyJointAngle(entry.joint));
           action.append(apply);
           row.append(action);
+          const toleranceCell = document.createElement("td");
+          const toleranceInput = createFineToleranceInput(joint.address);
+          toleranceCell.append(toleranceInput);
+          row.append(toleranceCell);
           body.append(row);
           jointRows.set(joint.address, entry);
         }
